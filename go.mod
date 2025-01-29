@@ -1,6 +1,6 @@
 module github.com/omakoto/evsniff-go
 
-go 1.23.4
+go 1.23
 
 require (
 	github.com/omakoto/go-common v0.0.0-20250106043038-04d11d1e6ee4
