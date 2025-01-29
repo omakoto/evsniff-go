@@ -2,15 +2,19 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"sync"
 
-	evdev "github.com/holoplot/go-evdev"
+	"github.com/holoplot/go-evdev"
+	"github.com/mattn/go-isatty"
 	"github.com/omakoto/go-common/src/common"
 	"github.com/pborman/getopt/v2"
 )
 
 var (
-	color   = getopt.BoolLong("color", 'c', "force colors")
-	verbose = getopt.BoolLong("verbose", 'v', "make verbose")
+	forceColor = getopt.BoolLong("color", 'c', "force colors")
+	noColor    = getopt.BoolLong("no-color", 0, "disable colors")
+	verbose    = getopt.BoolLong("verbose", 'v', "make verbose")
 )
 
 func main() {
@@ -20,11 +24,30 @@ func main() {
 func realMain() int {
 	getopt.Parse()
 
-	_ = listDevices()
-	return 1
+	useColors := false
+	if *forceColor {
+		useColors = true
+	} else if *noColor {
+		useColors = false
+	} else {
+		useColors = isatty.IsTerminal(os.Stdout.Fd())
+	}
+
+	devs := listDevices()
+	wg := sync.WaitGroup{}
+	for _, d := range devs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			testDevice(d, useColors)
+		}()
+	}
+	wg.Wait()
+	return 0
 }
 
-func listDevices() []evdev.InputPath {
+func listDevices() []*evdev.InputDevice {
+	ret := make([]*evdev.InputDevice, 0)
 	paths, err := evdev.ListDevicePaths()
 	common.Checkf(err, "Cannot list device paths")
 	for _, p := range paths {
@@ -39,11 +62,12 @@ func listDevices() []evdev.InputPath {
 			continue
 		}
 		fmt.Printf("%-20s [v%04x p%04x]:\t%s\n", p.Path, id.Vendor, id.Product, p.Name)
-		if *verbose || true {
+		if *verbose {
 			dumpDevice(d, "    ")
 		}
+		ret = append(ret, d)
 	}
-	return nil
+	return ret
 }
 
 func dumpDevice(d *evdev.InputDevice, prefix string) {
@@ -92,4 +116,149 @@ func dumpDevice(d *evdev.InputDevice, prefix string) {
 			fmt.Printf("%s  Property type %d (%s)\n", prefix, p, evdev.PropName(p))
 		}
 	}
+}
+
+type colorizer interface {
+	reset() string
+	deviceLine() string
+	deviceId() string
+	deviceName() string
+	synReport() string
+	keyEvent() string
+	relEvent() string
+	absEvent() string
+	otherEvent() string
+	failure() string
+}
+
+type noColorizer struct {
+}
+
+var _ colorizer = (*noColorizer)(nil)
+
+// absEvent implements colorizer.
+func (n *noColorizer) absEvent() string {
+	return ""
+}
+
+// deviceId implements colorizer.
+func (n *noColorizer) deviceId() string {
+	return ""
+}
+
+// deviceLine implements colorizer.
+func (n *noColorizer) deviceLine() string {
+	return ""
+}
+
+// deviceName implements colorizer.
+func (n *noColorizer) deviceName() string {
+	return ""
+}
+
+// failure implements colorizer.
+func (n *noColorizer) failure() string {
+	return ""
+}
+
+// keyEvent implements colorizer.
+func (n *noColorizer) keyEvent() string {
+	return ""
+}
+
+// otherEvent implements colorizer.
+func (n *noColorizer) otherEvent() string {
+	return ""
+}
+
+// relEvent implements colorizer.
+func (n *noColorizer) relEvent() string {
+	return ""
+}
+
+// reset implements colorizer.
+func (n *noColorizer) reset() string {
+	return ""
+}
+
+// synReport implements colorizer.
+func (n *noColorizer) synReport() string {
+	return ""
+}
+
+type basicColorizer struct {
+}
+
+var _ colorizer = (*basicColorizer)(nil)
+
+// absEvent implements colorizer.
+func (n *basicColorizer) absEvent() string {
+	return "\x1b[95;1m"
+}
+
+// deviceId implements colorizer.
+func (n *basicColorizer) deviceId() string {
+	return "\x1b[93m"
+}
+
+// deviceLine implements colorizer.
+func (n *basicColorizer) deviceLine() string {
+	return "\x1b[36m"
+}
+
+// deviceName implements colorizer.
+func (n *basicColorizer) deviceName() string {
+	return "\x1b[92m"
+}
+
+// failure implements colorizer.
+func (n *basicColorizer) failure() string {
+	return "\x1b[38;5;9m"
+}
+
+// keyEvent implements colorizer.
+func (n *basicColorizer) keyEvent() string {
+	return "\x1b[96;1m"
+}
+
+// otherEvent implements colorizer.
+func (n *basicColorizer) otherEvent() string {
+	return "\x1b[36m"
+}
+
+// relEvent implements colorizer.
+func (n *basicColorizer) relEvent() string {
+	return "\x1b[93;1m"
+}
+
+// reset implements colorizer.
+func (n *basicColorizer) reset() string {
+	return "\x1b[0m"
+}
+
+// synReport implements colorizer.
+func (n *basicColorizer) synReport() string {
+	return "\x1b[90m"
+}
+
+var _ colorizer = (*basicColorizer)(nil)
+
+var outmu = &sync.Mutex{}
+
+func write(format string, args ...interface{}) {
+	text := fmt.Sprintf(format, args...)
+	outmu.Lock()
+	defer outmu.Unlock()
+
+	fmt.Print(text)
+}
+
+func testDevice(d *evdev.InputDevice, color bool) {
+	var col colorizer
+	if color {
+		col = &basicColorizer{}
+	} else {
+		col = &noColorizer{}
+	}
+	write("%sOK%s -- xx\n", col.failure(), col.reset())
 }

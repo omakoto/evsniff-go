@@ -8,6 +8,11 @@ require (
 )
 
 require (
+	github.com/mattn/go-isatty v0.0.20 // indirect
+	golang.org/x/sys v0.24.0 // indirect
+)
+
+require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/holoplot/go-evdev v0.0.0-20240306072622-217e18f17db1
 )
