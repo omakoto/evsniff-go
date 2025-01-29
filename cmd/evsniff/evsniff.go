@@ -38,9 +38,10 @@ func realMain() int {
 	wg := sync.WaitGroup{}
 	for _, d := range devs {
 		wg.Add(1)
+		d2 := d
 		go func() {
 			defer wg.Done()
-			testDevice(d, useColors)
+			testDevice(d2, useColors)
 		}()
 	}
 	wg.Wait()
@@ -275,6 +276,9 @@ func testDevice(d *evdev.InputDevice, color bool) {
 	path := d.Path()
 
 	for {
+		if *verbose {
+			fmt.Printf("Waiting for input (%s)...\n", name)
+		}
 		e, err := d.ReadOne()
 		if err != nil {
 			fmt.Printf("Error reading from device: %v\n", err)
