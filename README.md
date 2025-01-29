@@ -1,5 +1,5 @@
 # evsniff-go
-Evtest for all devices at once
+Evtest for all devices at once (w/ colors)
 
 ## Install
 
