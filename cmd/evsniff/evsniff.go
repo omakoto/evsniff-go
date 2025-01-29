@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/holoplot/go-evdev"
 	"github.com/mattn/go-isatty"
@@ -61,7 +62,7 @@ func listDevices() []*evdev.InputDevice {
 			fmt.Printf("Error obtaining device info %s: %s", p.Path, err)
 			continue
 		}
-		fmt.Printf("%-20s [v%04x p%04x]:\t%s\n", p.Path, id.Vendor, id.Product, p.Name)
+		fmt.Printf("%-20s [v%04X p%04X]:\t%s\n", p.Path, id.Vendor, id.Product, p.Name)
 		if *verbose {
 			dumpDevice(d, "    ")
 		}
@@ -199,7 +200,7 @@ var _ colorizer = (*basicColorizer)(nil)
 
 // time implements colorizer.
 func (n *basicColorizer) time() string {
-	return "\x1b[38;5;15m"
+	return "\x1b[38;5;2m"
 }
 
 // absEvent implements colorizer.
@@ -256,6 +257,8 @@ var _ colorizer = (*basicColorizer)(nil)
 
 var mu = &sync.Mutex{}
 
+var lastPath string
+
 func testDevice(d *evdev.InputDevice, color bool) {
 	var col colorizer
 	if color {
@@ -263,7 +266,14 @@ func testDevice(d *evdev.InputDevice, color bool) {
 	} else {
 		col = &noColorizer{}
 	}
-	// write("%sOK%s -- xx\n", col.failure(), col.reset())
+	var lastTime time.Time = time.Time{}
+
+	id, err := d.InputID()
+	common.CheckPanic(err, "Unable to get device info")
+	name, err := d.Name()
+	common.CheckPanic(err, "Unable to get device name")
+	path := d.Path()
+
 	for {
 		e, err := d.ReadOne()
 		if err != nil {
@@ -271,9 +281,28 @@ func testDevice(d *evdev.InputDevice, color bool) {
 			return
 		}
 
-		ts := fmt.Sprintf("%s%d.%06d%s ", col.time(), e.Time.Sec, e.Time.Usec, col.reset())
+		ts := fmt.Sprintf("[%s%d.%06d%s]", col.time(), e.Time.Sec, e.Time.Usec, col.reset())
 
+		now := time.Now()
 		mu.Lock()
+		if now.Sub(lastTime) > time.Second*3 || lastPath != path {
+			// show device name
+			fmt.Printf("%s# From device [%sv%04X p%04X%s]: %s%s%s (%s)%s\n",
+				col.deviceLine(),
+				col.deviceId(),
+				id.Vendor,
+				id.Product,
+				col.deviceLine(),
+				col.deviceName(),
+				name,
+				col.deviceLine(),
+				path,
+				col.reset(),
+			)
+		}
+		lastTime = now
+		lastPath = path
+
 		switch e.Type {
 		case evdev.EV_SYN:
 			c := col.otherEvent()
