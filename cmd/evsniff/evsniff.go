@@ -120,6 +120,7 @@ func dumpDevice(d *evdev.InputDevice, prefix string) {
 
 type colorizer interface {
 	reset() string
+	time() string
 	deviceLine() string
 	deviceId() string
 	deviceName() string
@@ -132,6 +133,11 @@ type colorizer interface {
 }
 
 type noColorizer struct {
+}
+
+// time implements colorizer.
+func (n *noColorizer) time() string {
+	return ""
 }
 
 var _ colorizer = (*noColorizer)(nil)
@@ -191,6 +197,11 @@ type basicColorizer struct {
 
 var _ colorizer = (*basicColorizer)(nil)
 
+// time implements colorizer.
+func (n *basicColorizer) time() string {
+	return "\x1b[38;5;15m"
+}
+
 // absEvent implements colorizer.
 func (n *basicColorizer) absEvent() string {
 	return "\x1b[95;1m"
@@ -243,15 +254,7 @@ func (n *basicColorizer) synReport() string {
 
 var _ colorizer = (*basicColorizer)(nil)
 
-var outmu = &sync.Mutex{}
-
-func write(format string, args ...interface{}) {
-	text := fmt.Sprintf(format, args...)
-	outmu.Lock()
-	defer outmu.Unlock()
-
-	fmt.Print(text)
-}
+var mu = &sync.Mutex{}
 
 func testDevice(d *evdev.InputDevice, color bool) {
 	var col colorizer
@@ -260,5 +263,40 @@ func testDevice(d *evdev.InputDevice, color bool) {
 	} else {
 		col = &noColorizer{}
 	}
-	write("%sOK%s -- xx\n", col.failure(), col.reset())
+	// write("%sOK%s -- xx\n", col.failure(), col.reset())
+	for {
+		e, err := d.ReadOne()
+		if err != nil {
+			fmt.Printf("Error reading from device: %v\n", err)
+			return
+		}
+
+		ts := fmt.Sprintf("%s%d.%06d%s ", col.time(), e.Time.Sec, e.Time.Usec, col.reset())
+
+		mu.Lock()
+		switch e.Type {
+		case evdev.EV_SYN:
+			c := col.otherEvent()
+			switch e.Code {
+			case evdev.SYN_REPORT:
+				c = col.synReport()
+			case evdev.SYN_DROPPED:
+				c = col.failure()
+			}
+			fmt.Printf("%s %s-------------- %s ------------%s\n", ts, c, e.CodeName(), col.reset())
+		default:
+			c := col.otherEvent()
+			switch e.Type {
+			case evdev.EV_KEY:
+				c = col.keyEvent()
+			case evdev.EV_REL:
+				c = col.relEvent()
+			case evdev.EV_ABS:
+				c = col.absEvent()
+			}
+
+			fmt.Printf("%s %s%s%s\n", ts, c, e.String(), col.reset())
+		}
+		mu.Unlock()
+	}
 }
