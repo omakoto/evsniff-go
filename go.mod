@@ -3,7 +3,7 @@ module github.com/omakoto/evsniff-go
 go 1.23
 
 require (
-	github.com/omakoto/go-common v0.0.0-20250106043038-04d11d1e6ee4
+	github.com/omakoto/go-common v0.0.0-20250201034257-33e3d2de7676
 	github.com/pborman/getopt/v2 v2.1.0
 )
 
