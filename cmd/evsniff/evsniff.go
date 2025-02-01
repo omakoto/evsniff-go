@@ -16,6 +16,7 @@ var (
 	forceColor = getopt.BoolLong("color", 'c', "force colors")
 	noColor    = getopt.BoolLong("no-color", 0, "disable colors")
 	verbose    = getopt.BoolLong("verbose", 'v', "make verbose")
+	infoOnly   = getopt.BoolLong("info", 'i', "print device info and quit")
 )
 
 func main() {
@@ -35,6 +36,9 @@ func realMain() int {
 	}
 
 	devs := listDevices()
+	if *infoOnly {
+		return 0
+	}
 	wg := sync.WaitGroup{}
 	for _, d := range devs {
 		wg.Add(1)
