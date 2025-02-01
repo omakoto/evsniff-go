@@ -3,10 +3,12 @@ package main
 import (
 	"fmt"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/holoplot/go-evdev"
+	"github.com/maruel/natural"
 	"github.com/mattn/go-isatty"
 	"github.com/omakoto/go-common/src/common"
 	"github.com/pborman/getopt/v2"
@@ -54,26 +56,41 @@ func realMain() int {
 
 func listDevices() []*evdev.InputDevice {
 	ret := make([]*evdev.InputDevice, 0)
-	paths, err := evdev.ListDevicePaths()
+	devices, err := evdev.ListDevicePaths()
 	common.Checkf(err, "Cannot list device paths")
-	for _, p := range paths {
-		d, err := evdev.Open(p.Path)
+
+	sortDevices(devices)
+
+	for _, d := range devices {
+		i, err := evdev.Open(d.Path)
 		if err != nil {
-			fmt.Printf("Error opening device %s: %s", p.Path, err)
+			fmt.Printf("Error opening device %s: %s", d.Path, err)
 			continue
 		}
-		id, err := d.InputID()
+		id, err := i.InputID()
 		if err != nil {
-			fmt.Printf("Error obtaining device info %s: %s", p.Path, err)
+			fmt.Printf("Error obtaining device info %s: %s", d.Path, err)
 			continue
 		}
-		fmt.Printf("%-20s [v%04X p%04X]:\t%s\n", p.Path, id.Vendor, id.Product, p.Name)
+		fmt.Printf("%-20s [v%04X p%04X]:\t%s\n", d.Path, id.Vendor, id.Product, d.Name)
 		if *verbose {
-			dumpDevice(d, "    ")
+			dumpDevice(i, "    ")
 		}
-		ret = append(ret, d)
+		ret = append(ret, i)
 	}
 	return ret
+}
+
+func sortDevices(devices []evdev.InputPath) {
+	slices.SortFunc(devices, func(a, b evdev.InputPath) int {
+		if natural.Less(a.Path, b.Path) {
+			return -1
+		}
+		if natural.Less(b.Path, a.Path) {
+			return 1
+		}
+		return 0
+	})
 }
 
 func dumpDevice(d *evdev.InputDevice, prefix string) {
