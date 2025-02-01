@@ -18,7 +18,7 @@ import (
 var (
 	forceColor = getopt.BoolLong("color", 'c', "force colors")
 	noColor    = getopt.BoolLong("no-color", 0, "disable colors")
-	verbose    = getopt.BoolLong("verbose", 'v', "make verbose")
+	verbose    = getopt.BoolLong("verbose", 'v', "make verbose (show detailed device info)")
 	infoOnly   = getopt.BoolLong("info", 'i', "print device info and quit")
 )
 
