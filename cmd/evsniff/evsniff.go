@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"sync"
@@ -94,12 +95,15 @@ func sortDevices(devices []evdev.InputPath) {
 }
 
 func dumpDevice(d *evdev.InputDevice, prefix string) {
-	for _, t := range d.CapableTypes() {
+	types := d.CapableTypes()
+	slices.Sort(types)
+	for _, t := range types {
 		fmt.Printf("%sEvent type %d (%s)\n", prefix, t, evdev.TypeName(t))
 
 		state, err := d.State(t)
 		if err == nil {
-			for code, value := range state {
+			for _, code := range slices.Sorted(maps.Keys(state)) {
+				value := state[code]
 				fmt.Printf("%s  Event code %d (%s) state %v\n", prefix, code, evdev.CodeName(t, code), value)
 			}
 		}
@@ -107,13 +111,12 @@ func dumpDevice(d *evdev.InputDevice, prefix string) {
 		if t != evdev.EV_ABS {
 			continue
 		}
-
 		absInfos, err := d.AbsInfos()
 		if err != nil {
 			continue
 		}
-
-		for code, absInfo := range absInfos {
+		for _, code := range slices.Sorted(maps.Keys(absInfos)) {
+			absInfo := absInfos[code]
 			fmt.Printf("%s  Event code %d (%s)\n", prefix, code, evdev.CodeName(t, code))
 			fmt.Printf("%s    Value: %d\n", prefix, absInfo.Value)
 			fmt.Printf("%s    Min: %d\n", prefix, absInfo.Minimum)
