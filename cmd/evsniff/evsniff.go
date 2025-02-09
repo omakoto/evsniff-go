@@ -411,7 +411,11 @@ func waitForNewDevices(starter func(idev *evdev.InputDevice)) {
 					if *verbose {
 						fmt.Printf("%s\n", path)
 					}
-					idev := must.Must2(evdev.Open(path))
+					idev, err := evdev.Open(path)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "Failed to open %s: %s\n", path, err)
+						continue
+					}
 					dumpDevice(idev, "    ")
 					starter(idev)
 				}
