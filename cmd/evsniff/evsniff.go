@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
+	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/holoplot/go-evdev"
 	"github.com/jhenstridge/go-inotify"
 	"github.com/maruel/natural"
@@ -26,7 +28,6 @@ var (
 	noColor    = getopt.BoolLong("no-color", 0, "disable colors")
 	verbose    = getopt.BoolLong("verbose", 'v', "make verbose (show detailed device info)")
 	infoOnly   = getopt.BoolLong("info", 'i', "print device info and quit")
-	useInotify = getopt.BoolLong("inotify", 'n', "use inotify to watch for new devices")
 )
 
 func main() {
@@ -60,28 +61,13 @@ func realMain() int {
 	}
 
 	// Watch for new devices.
-	if *useInotify {
-		w := must.Must2(inotify.NewWatcher())
-		must.Must2(w.AddWatch(devInput, inotify.IN_CREATE|inotify.IN_DELETE))
-
-		// Start listening for events.
+	waitForNewDevices(func(idev *evdev.InputDevice) {
+		wg.Add(1)
 		go func() {
-			for ev := range w.Event {
-				fmt.Printf("[inotify] %v\n", ev)
-				if (ev.Mask & inotify.IN_CREATE) != 0 {
-					time.Sleep(500)
-					// Added
-					path := devInput + "/" + ev.Name
-					d, err := evdev.Open(path)
-					if err != nil {
-						fmt.Printf("Error opening device %s: %s\n", path, err)
-					} else {
-						dumpDevice(d, "    ")
-					}
-				}
-			}
+			defer wg.Done()
+			testDevice(idev, useColors)
 		}()
-	}
+	})
 
 	wg.Wait()
 	return 0
@@ -95,25 +81,10 @@ func listDevices() []*evdev.InputDevice {
 	sortDevices(devices)
 
 	for _, idev := range devices {
-		// d, err := evdev.Open(idev.Path)
-		// if err != nil {
-		// 	fmt.Printf("Error opening device %s: %s", d.Path(), err)
-		// 	continue
-		// }
-
 		d := must.Must2(evdev.Open(idev.Path))
 
 		dumpDevice(d, "    ")
 
-		// id, err := i.InputID()
-		// if err != nil {
-		// 	fmt.Printf("Error obtaining device info %s: %s", d.Path, err)
-		// 	continue
-		// }
-		// fmt.Printf("%-20s [v%04X p%04X]:\t%s\n", d.Path, id.Vendor, id.Product, d.Name)
-		// if *verbose {
-		// 	dumpDevice(i, "    ")
-		// }
 		ret = append(ret, d)
 	}
 	return ret
@@ -397,4 +368,55 @@ func testDevice(d *evdev.InputDevice, color bool) {
 		}
 		mu.Unlock()
 	}
+}
+
+func waitForNewDevices(starter func(idev *evdev.InputDevice)) {
+	w := must.Must2(inotify.NewWatcher())
+	must.Must2(w.AddWatch(devInput, inotify.IN_CREATE|inotify.IN_DELETE))
+
+	// Start listening for events.
+	go func() {
+		pending := mapset.NewSet[string]()
+		// for ev := range w.Event {
+		updater := make(chan bool, 16)
+
+		for {
+			select {
+			case ev := <-w.Event:
+				fmt.Printf("[inotify] %v\n", ev)
+				if !strings.HasPrefix(ev.Name, "event") {
+					continue
+				}
+				path := devInput + "/" + ev.Name
+				if (ev.Mask & inotify.IN_DELETE) != 0 {
+					pending.Remove(path)
+				}
+				if (ev.Mask & inotify.IN_CREATE) != 0 {
+					pending.Add(path)
+					go func() {
+						timer := time.NewTimer(1000 * time.Millisecond)
+						<-timer.C
+						updater <- true
+					}()
+
+				}
+			case <-updater:
+				if pending.IsEmpty() {
+					break
+				}
+				if *verbose {
+					fmt.Printf("[updater] %v\n", pending)
+				}
+				for path := range pending.Iter() {
+					if *verbose {
+						fmt.Printf("%s\n", path)
+					}
+					idev := must.Must2(evdev.Open(path))
+					dumpDevice(idev, "    ")
+					starter(idev)
+				}
+				pending.Clear()
+			}
+		}
+	}()
 }
