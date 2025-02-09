@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	mapset "github.com/deckarep/golang-set/v2"
@@ -45,6 +46,12 @@ func realMain() int {
 	} else {
 		useColors = isatty.IsTerminal(os.Stdout.Fd())
 	}
+	var col colorizer
+	if useColors {
+		col = &basicColorizer{}
+	} else {
+		col = &noColorizer{}
+	}
 
 	devs := listDevices()
 	if *infoOnly {
@@ -56,16 +63,16 @@ func realMain() int {
 		d2 := d
 		go func() {
 			defer wg.Done()
-			testDevice(d2, useColors)
+			testDevice(d2, col)
 		}()
 	}
 
 	// Watch for new devices.
-	waitForNewDevices(func(idev *evdev.InputDevice) {
+	waitForNewDevices(col, func(idev *evdev.InputDevice) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			testDevice(idev, useColors)
+			testDevice(idev, col)
 		}()
 	})
 
@@ -168,6 +175,10 @@ type colorizer interface {
 	absEvent() string
 	otherEvent() string
 	failure() string
+	inotify() string
+	inotifyPath() string
+	inotifyDelete() string
+	inotifyCreate() string
 }
 
 type noColorizer struct {
@@ -227,6 +238,26 @@ func (n *noColorizer) reset() string {
 
 // synReport implements colorizer.
 func (n *noColorizer) synReport() string {
+	return ""
+}
+
+// inotify implements colorizer.
+func (n *noColorizer) inotify() string {
+	return ""
+}
+
+// inotifyCreate implements colorizer.
+func (n *noColorizer) inotifyCreate() string {
+	return ""
+}
+
+// inotifyDelete implements colorizer.
+func (n *noColorizer) inotifyDelete() string {
+	return ""
+}
+
+// inotifyPath implements colorizer.
+func (n *noColorizer) inotifyPath() string {
 	return ""
 }
 
@@ -290,19 +321,33 @@ func (n *basicColorizer) synReport() string {
 	return "\x1b[90m"
 }
 
+// inotify implements colorizer.
+func (n *basicColorizer) inotify() string {
+	return "\x1b[38;5;11m"
+}
+
+// inotifyCreate implements colorizer.
+func (n *basicColorizer) inotifyCreate() string {
+	return "\x1b[38;5;10m"
+}
+
+// inotifyDelete implements colorizer.
+func (n *basicColorizer) inotifyDelete() string {
+	return "\x1b[38;5;9m"
+}
+
+// inotifyPath implements colorizer.
+func (n *basicColorizer) inotifyPath() string {
+	return "\x1b[38;5;15m"
+}
+
 var _ colorizer = (*basicColorizer)(nil)
 
 var mu = &sync.Mutex{}
 
 var lastPath string
 
-func testDevice(d *evdev.InputDevice, color bool) {
-	var col colorizer
-	if color {
-		col = &basicColorizer{}
-	} else {
-		col = &noColorizer{}
-	}
+func testDevice(d *evdev.InputDevice, col colorizer) {
 	var lastTime time.Time = time.Time{}
 
 	id, err := d.InputID()
@@ -370,7 +415,7 @@ func testDevice(d *evdev.InputDevice, color bool) {
 	}
 }
 
-func waitForNewDevices(starter func(idev *evdev.InputDevice)) {
+func waitForNewDevices(col colorizer, starter func(idev *evdev.InputDevice)) {
 	w := must.Must2(inotify.NewWatcher())
 	must.Must2(w.AddWatch(devInput, inotify.IN_CREATE|inotify.IN_DELETE))
 
@@ -380,25 +425,59 @@ func waitForNewDevices(starter func(idev *evdev.InputDevice)) {
 		// for ev := range w.Event {
 		updater := make(chan bool, 16)
 
+		updatePending := false
+
+		updaterInvoker := func() {
+			if updatePending {
+				return
+			}
+			updatePending = true
+			timer := time.NewTimer(1000 * time.Millisecond)
+
+			<-timer.C
+
+			updatePending = false
+			updater <- true
+		}
+
 		for {
 			select {
 			case ev := <-w.Event:
-				fmt.Printf("[inotify] %v\n", ev)
+				create := false
+				evCol := ""
+				evName := ""
+
+				if (ev.Mask & inotify.IN_DELETE) != 0 {
+					evCol = col.inotifyDelete()
+					evName = "DELETE"
+				} else if (ev.Mask & inotify.IN_CREATE) != 0 {
+					evCol = col.inotifyCreate()
+					evName = "CREATE"
+					create = true
+				} else {
+					break // Shouldn't happen
+				}
+
+				path := devInput + "/" + ev.Name
+				fmt.Printf("[%sinotify%s] %s%s%s: %s%s%s\n",
+					col.inotify(),
+					col.reset(),
+					evCol,
+					evName,
+					col.reset(),
+					col.inotifyPath(),
+					path,
+					col.reset(),
+				)
 				if !strings.HasPrefix(ev.Name, "event") {
 					continue
 				}
-				path := devInput + "/" + ev.Name
-				if (ev.Mask & inotify.IN_DELETE) != 0 {
-					pending.Remove(path)
-				}
-				if (ev.Mask & inotify.IN_CREATE) != 0 {
+				if create {
 					pending.Add(path)
-					go func() {
-						timer := time.NewTimer(1000 * time.Millisecond)
-						<-timer.C
-						updater <- true
-					}()
 
+					go updaterInvoker()
+				} else {
+					pending.Remove(path)
 				}
 			case <-updater:
 				if pending.IsEmpty() {
@@ -407,19 +486,36 @@ func waitForNewDevices(starter func(idev *evdev.InputDevice)) {
 				if *verbose {
 					fmt.Printf("[updater] %v\n", pending)
 				}
+				retries := mapset.NewSet[string]()
 				for path := range pending.Iter() {
 					if *verbose {
 						fmt.Printf("%s\n", path)
 					}
+					// ls := exec.Command("ls", "-ls", path)
+					// ls.Stdout = os.Stdout
+					// ls.Stderr = os.Stdout
+					// ls.Start()
+
 					idev, err := evdev.Open(path)
+
 					if err != nil {
-						fmt.Fprintf(os.Stderr, "Failed to open %s: %s\n", path, err)
+						if err, ok := err.(*os.PathError); ok {
+							if serr, ok := err.Err.(syscall.Errno); ok && serr == syscall.EACCES {
+								fmt.Fprintf(os.Stderr, "%s not ready to open yet...\n", path)
+								retries.Add(path)
+								continue
+							}
+						}
+						fmt.Fprintf(os.Stderr, "Failed to open %s: '%s'\n", path, err.Error())
 						continue
 					}
 					dumpDevice(idev, "    ")
 					starter(idev)
 				}
-				pending.Clear()
+				pending = retries
+				if !pending.IsEmpty() {
+					go updaterInvoker()
+				}
 			}
 		}
 	}()
