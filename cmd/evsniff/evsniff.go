@@ -8,11 +8,17 @@ import (
 	"time"
 
 	"github.com/holoplot/go-evdev"
+	"github.com/jhenstridge/go-inotify"
 	"github.com/maruel/natural"
 	"github.com/mattn/go-isatty"
 	"github.com/omakoto/go-common/src/common"
+	"github.com/omakoto/go-common/src/must"
 	"github.com/omakoto/go-common/src/utils"
 	"github.com/pborman/getopt/v2"
+)
+
+const (
+	devInput = "/dev/input"
 )
 
 var (
@@ -20,6 +26,7 @@ var (
 	noColor    = getopt.BoolLong("no-color", 0, "disable colors")
 	verbose    = getopt.BoolLong("verbose", 'v', "make verbose (show detailed device info)")
 	infoOnly   = getopt.BoolLong("info", 'i', "print device info and quit")
+	useInotify = getopt.BoolLong("inotify", 'n', "use inotify to watch for new devices")
 )
 
 func main() {
@@ -51,6 +58,31 @@ func realMain() int {
 			testDevice(d2, useColors)
 		}()
 	}
+
+	// Watch for new devices.
+	if *useInotify {
+		w := must.Must2(inotify.NewWatcher())
+		must.Must2(w.AddWatch(devInput, inotify.IN_CREATE|inotify.IN_DELETE))
+
+		// Start listening for events.
+		go func() {
+			for ev := range w.Event {
+				fmt.Printf("[inotify] %v\n", ev)
+				if (ev.Mask & inotify.IN_CREATE) != 0 {
+					time.Sleep(500)
+					// Added
+					path := devInput + "/" + ev.Name
+					d, err := evdev.Open(path)
+					if err != nil {
+						fmt.Printf("Error opening device %s: %s\n", path, err)
+					} else {
+						dumpDevice(d, "    ")
+					}
+				}
+			}
+		}()
+	}
+
 	wg.Wait()
 	return 0
 }
@@ -62,22 +94,27 @@ func listDevices() []*evdev.InputDevice {
 
 	sortDevices(devices)
 
-	for _, d := range devices {
-		i, err := evdev.Open(d.Path)
-		if err != nil {
-			fmt.Printf("Error opening device %s: %s", d.Path, err)
-			continue
-		}
-		id, err := i.InputID()
-		if err != nil {
-			fmt.Printf("Error obtaining device info %s: %s", d.Path, err)
-			continue
-		}
-		fmt.Printf("%-20s [v%04X p%04X]:\t%s\n", d.Path, id.Vendor, id.Product, d.Name)
-		if *verbose {
-			dumpDevice(i, "    ")
-		}
-		ret = append(ret, i)
+	for _, idev := range devices {
+		// d, err := evdev.Open(idev.Path)
+		// if err != nil {
+		// 	fmt.Printf("Error opening device %s: %s", d.Path(), err)
+		// 	continue
+		// }
+
+		d := must.Must2(evdev.Open(idev.Path))
+
+		dumpDevice(d, "    ")
+
+		// id, err := i.InputID()
+		// if err != nil {
+		// 	fmt.Printf("Error obtaining device info %s: %s", d.Path, err)
+		// 	continue
+		// }
+		// fmt.Printf("%-20s [v%04X p%04X]:\t%s\n", d.Path, id.Vendor, id.Product, d.Name)
+		// if *verbose {
+		// 	dumpDevice(i, "    ")
+		// }
+		ret = append(ret, d)
 	}
 	return ret
 }
@@ -89,6 +126,17 @@ func sortDevices(devices []evdev.InputPath) {
 }
 
 func dumpDevice(d *evdev.InputDevice, prefix string) {
+	id, err := d.InputID()
+	if err != nil {
+		fmt.Printf("Error obtaining device info %s: %s", d.Path(), err)
+		return
+	}
+
+	fmt.Printf("%-20s [v%04X p%04X]:\t%s\n", d.Path(), id.Vendor, id.Product, must.Must2(d.Name()))
+	if !*verbose {
+		return
+	}
+
 	types := d.CapableTypes()
 	slices.Sort(types)
 	for _, t := range types {
