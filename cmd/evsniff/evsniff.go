@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	mapset "github.com/deckarep/golang-set/v2"
@@ -499,12 +498,10 @@ func waitForNewDevices(col colorizer, starter func(idev *evdev.InputDevice)) {
 					idev, err := evdev.Open(path)
 
 					if err != nil {
-						if err, ok := err.(*os.PathError); ok {
-							if serr, ok := err.Err.(syscall.Errno); ok && serr == syscall.EACCES {
-								fmt.Fprintf(os.Stderr, "%s not ready to open yet...\n", path)
-								retries.Add(path)
-								continue
-							}
+						if os.IsPermission(err) {
+							fmt.Fprintf(os.Stderr, "%s not ready to open yet...\n", path)
+							retries.Add(path)
+							continue
 						}
 						fmt.Fprintf(os.Stderr, "Failed to open %s: '%s'\n", path, err.Error())
 						continue
