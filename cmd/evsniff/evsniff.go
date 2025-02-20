@@ -24,10 +24,11 @@ const (
 )
 
 var (
-	forceColor = getopt.BoolLong("color", 'c', "force colors")
-	noColor    = getopt.BoolLong("no-color", 0, "disable colors")
-	verbose    = getopt.BoolLong("verbose", 'v', "make verbose (show detailed device info)")
-	infoOnly   = getopt.BoolLong("info", 'i', "print device info and quit")
+	forceColor    = getopt.BoolLong("color", 'c', "force colors")
+	noColor       = getopt.BoolLong("no-color", 0, "disable colors")
+	verbose       = getopt.BoolLong("verbose", 'v', "make verbose (show detailed device info)")
+	infoOnly      = getopt.BoolLong("info", 'i', "print device info and quit")
+	showSynReport = getopt.BoolLong("show-syn", 'V', "show SYN_REPORTs")
 )
 
 func main() {
@@ -345,73 +346,83 @@ var _ colorizer = (*basicColorizer)(nil)
 var mu = &sync.Mutex{}
 
 var lastPath string
+var lastTime time.Time = time.Time{}
 
 func testDevice(d *evdev.InputDevice, col colorizer) {
-	var lastTime time.Time = time.Time{}
-
 	id, err := d.InputID()
 	common.CheckPanic(err, "Unable to get device info")
 	name, err := d.Name()
 	common.CheckPanic(err, "Unable to get device name")
 	path := d.Path()
 
+	if *verbose {
+		fmt.Printf("Waiting for input (%s)...\n", name)
+	}
 	for {
-		if *verbose {
-			fmt.Printf("Waiting for input (%s)...\n", name)
-		}
-		e, err := d.ReadOne()
+		err := handleOneEvent(d, col, path, id, name)
 		if err != nil {
 			fmt.Printf("Error reading from device: %v\n", err)
-			return
+			break
 		}
-
-		ts := fmt.Sprintf("[%s%d.%06d%s]", col.time(), e.Time.Sec, e.Time.Usec, col.reset())
-
-		now := time.Now()
-		mu.Lock()
-		if now.Sub(lastTime) > time.Second*3 || lastPath != path {
-			// show device name
-			fmt.Printf("%s# From device [%sv%04X p%04X%s]: %s%s%s (%s)%s\n",
-				col.deviceLine(),
-				col.deviceId(),
-				id.Vendor,
-				id.Product,
-				col.deviceLine(),
-				col.deviceName(),
-				name,
-				col.deviceLine(),
-				path,
-				col.reset(),
-			)
-		}
-		lastTime = now
-		lastPath = path
-
-		switch e.Type {
-		case evdev.EV_SYN:
-			c := col.otherEvent()
-			switch e.Code {
-			case evdev.SYN_REPORT:
-				c = col.synReport()
-			case evdev.SYN_DROPPED:
-				c = col.failure()
-			}
-			fmt.Printf("%s %s-------------- %s ------------%s\n", ts, c, e.CodeName(), col.reset())
-		default:
-			c := col.otherEvent()
-			switch e.Type {
-			case evdev.EV_KEY:
-				c = col.keyEvent()
-			case evdev.EV_REL:
-				c = col.relEvent()
-			case evdev.EV_ABS:
-				c = col.absEvent()
-			}
-
-			fmt.Printf("%s %s%s%s\n", ts, c, e.String(), col.reset())
-		}
-		mu.Unlock()
 	}
+}
+
+func handleOneEvent(d *evdev.InputDevice, col colorizer, path string, id evdev.InputID, name string) error {
+	e, err := d.ReadOne()
+	if err != nil {
+		return err
+	}
+	if !*showSynReport && e.Type == evdev.EV_SYN && e.Code == evdev.SYN_REPORT {
+		return nil
+	}
+
+	ts := fmt.Sprintf("[%s%d.%06d%s]", col.time(), e.Time.Sec, e.Time.Usec, col.reset())
+
+	now := time.Now()
+	mu.Lock()
+	defer mu.Unlock()
+	if now.Sub(lastTime) > time.Second*3 || lastPath != path {
+		// show device name
+		fmt.Printf("%s# From device [%sv%04X p%04X%s]: %s%s%s (%s)%s\n",
+			col.deviceLine(),
+			col.deviceId(),
+			id.Vendor,
+			id.Product,
+			col.deviceLine(),
+			col.deviceName(),
+			name,
+			col.deviceLine(),
+			path,
+			col.reset(),
+		)
+	}
+	lastTime = now
+	lastPath = path
+
+	switch e.Type {
+	case evdev.EV_SYN:
+		c := col.otherEvent()
+		switch e.Code {
+		case evdev.SYN_REPORT:
+			c = col.synReport()
+		case evdev.SYN_DROPPED:
+			c = col.failure()
+		}
+		fmt.Printf("%s %s-------------- %s ------------%s\n", ts, c, e.CodeName(), col.reset())
+	default:
+		c := col.otherEvent()
+		switch e.Type {
+		case evdev.EV_KEY:
+			c = col.keyEvent()
+		case evdev.EV_REL:
+			c = col.relEvent()
+		case evdev.EV_ABS:
+			c = col.absEvent()
+		}
+
+		fmt.Printf("%s %s%s%s\n", ts, c, e.String(), col.reset())
+	}
+	return nil
 }
 
 func waitForNewDevices(col colorizer, starter func(idev *evdev.InputDevice)) {
