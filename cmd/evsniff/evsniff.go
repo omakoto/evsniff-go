@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -35,9 +36,82 @@ func main() {
 	common.RunAndExit(realMain)
 }
 
-func realMain() int {
-	getopt.Parse()
+type selector interface {
+	matches(idev *evdev.InputDevice) bool
+}
+type allSelector struct {
+}
 
+var _ = selector((*allSelector)(nil))
+
+func (s *allSelector) matches(idev *evdev.InputDevice) bool {
+	return true
+}
+
+type negativeSelector struct {
+	selector selector
+}
+
+var _ = selector((*negativeSelector)(nil))
+
+func newNegativeSelector(selector selector) *negativeSelector {
+	return &negativeSelector{selector}
+}
+
+func (s *negativeSelector) matches(idev *evdev.InputDevice) bool {
+	return !s.selector.matches(idev)
+}
+
+type orSelector struct {
+	selectors []selector
+}
+
+var _ = selector((*allSelector)(nil))
+
+func (s *orSelector) matches(idev *evdev.InputDevice) bool {
+	if len(s.selectors) == 0 {
+		return true // Empty selector matches all.
+	}
+	for _, filter := range s.selectors {
+		if filter.matches(idev) {
+			return true
+		}
+	}
+	return false
+}
+
+type reSelector struct {
+	regex *regexp.Regexp
+}
+
+var _ = selector((*reSelector)(nil))
+
+func newReSelector(pattern string) *reSelector {
+	return &reSelector{regex: regexp.MustCompile("(?i)" + pattern)}
+}
+
+func (s *reSelector) matches(idev *evdev.InputDevice) bool {
+	return s.regex.MatchString(must.Must2(idev.Name()))
+}
+
+type pathSelector struct {
+	path string
+}
+
+var _ = selector((*pathSelector)(nil))
+
+func newPathSelector(path string) *pathSelector {
+	return &pathSelector{path}
+}
+
+func (s *pathSelector) matches(idev *evdev.InputDevice) bool {
+	return idev.Path() == s.path
+}
+
+func parseArgs(args []string) (col colorizer, sel selector) {
+	getopt.CommandLine.Parse(args)
+
+	// Build color filter
 	useColors := false
 	if *forceColor {
 		useColors = true
@@ -46,29 +120,64 @@ func realMain() int {
 	} else {
 		useColors = isatty.IsTerminal(os.Stdout.Fd())
 	}
-	var col colorizer
 	if useColors {
 		col = &basicColorizer{}
 	} else {
 		col = &noColorizer{}
 	}
 
-	devs := listDevices()
+	// Build device selector
+	or := orSelector{}
+	for _, arg := range getopt.CommandLine.Args() {
+		var s selector
+		negate := false
+
+		if strings.HasPrefix(arg, "!") {
+			negate = true
+			arg = arg[1:]
+		}
+
+		if strings.HasPrefix(arg, "/dev/input/") {
+			s = newPathSelector(arg)
+		} else {
+			s = newReSelector(arg)
+		}
+
+		if negate {
+			s = newNegativeSelector(s)
+		}
+
+		or.selectors = append(or.selectors, s)
+	}
+	sel = &or
+
+	return
+}
+
+func realMain() int {
+	col, sel := parseArgs(os.Args)
+
+	devs := listDevices(sel)
 	if *infoOnly {
 		return 0
 	}
+	if len(devs) == 0 {
+		fmt.Println("No devices selected.")
+		return 1
+	}
+
 	wg := sync.WaitGroup{}
 	for _, d := range devs {
 		wg.Add(1)
-		d2 := d
+		idev := d
 		go func() {
 			defer wg.Done()
-			testDevice(d2, col)
+			testDevice(idev, col)
 		}()
 	}
 
 	// Watch for new devices.
-	waitForNewDevices(col, func(idev *evdev.InputDevice) {
+	waitForNewDevices(col, sel, func(idev *evdev.InputDevice) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -80,7 +189,7 @@ func realMain() int {
 	return 0
 }
 
-func listDevices() []*evdev.InputDevice {
+func listDevices(f selector) []*evdev.InputDevice {
 	ret := make([]*evdev.InputDevice, 0)
 	devices, err := evdev.ListDevicePaths()
 	common.Checkf(err, "Cannot list device paths")
@@ -89,6 +198,11 @@ func listDevices() []*evdev.InputDevice {
 
 	for _, idev := range devices {
 		d := must.Must2(evdev.Open(idev.Path))
+
+		if !f.matches(d) {
+			d.Close()
+			continue
+		}
 
 		dumpDevice(d, "    ")
 
@@ -425,7 +539,7 @@ func handleOneEvent(d *evdev.InputDevice, col colorizer, path string, id evdev.I
 	return nil
 }
 
-func waitForNewDevices(col colorizer, starter func(idev *evdev.InputDevice)) {
+func waitForNewDevices(col colorizer, f selector, starter func(idev *evdev.InputDevice)) {
 	w := must.Must2(inotify.NewWatcher())
 	must.Must2(w.AddWatch(devInput, inotify.IN_CREATE|inotify.IN_DELETE))
 
@@ -515,6 +629,10 @@ func waitForNewDevices(col colorizer, starter func(idev *evdev.InputDevice)) {
 							continue
 						}
 						fmt.Fprintf(os.Stderr, "Failed to open %s: '%s'\n", path, err.Error())
+						continue
+					}
+					if !f.matches(idev) {
+						idev.Close()
 						continue
 					}
 					dumpDevice(idev, "    ")
