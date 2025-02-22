@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
+	"github.com/omakoto/evsniff-go/evutil"
 	"os"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -36,79 +36,7 @@ func main() {
 	common.RunAndExit(realMain)
 }
 
-type selector interface {
-	matches(idev *evdev.InputDevice) bool
-}
-type allSelector struct {
-}
-
-var _ = selector((*allSelector)(nil))
-
-func (s *allSelector) matches(idev *evdev.InputDevice) bool {
-	return true
-}
-
-type negativeSelector struct {
-	selector selector
-}
-
-var _ = selector((*negativeSelector)(nil))
-
-func newNegativeSelector(selector selector) *negativeSelector {
-	return &negativeSelector{selector}
-}
-
-func (s *negativeSelector) matches(idev *evdev.InputDevice) bool {
-	return !s.selector.matches(idev)
-}
-
-type orSelector struct {
-	selectors []selector
-}
-
-var _ = selector((*allSelector)(nil))
-
-func (s *orSelector) matches(idev *evdev.InputDevice) bool {
-	if len(s.selectors) == 0 {
-		return true // Empty selector matches all.
-	}
-	for _, filter := range s.selectors {
-		if filter.matches(idev) {
-			return true
-		}
-	}
-	return false
-}
-
-type reSelector struct {
-	regex *regexp.Regexp
-}
-
-var _ = selector((*reSelector)(nil))
-
-func newReSelector(pattern string) *reSelector {
-	return &reSelector{regex: regexp.MustCompile("(?i)" + pattern)}
-}
-
-func (s *reSelector) matches(idev *evdev.InputDevice) bool {
-	return s.regex.MatchString(must.Must2(idev.Name()))
-}
-
-type pathSelector struct {
-	path string
-}
-
-var _ = selector((*pathSelector)(nil))
-
-func newPathSelector(path string) *pathSelector {
-	return &pathSelector{path}
-}
-
-func (s *pathSelector) matches(idev *evdev.InputDevice) bool {
-	return idev.Path() == s.path
-}
-
-func parseArgs(args []string) (col colorizer, sel selector) {
+func parseArgs(args []string) (col colorizer, sel evutil.Selector) {
 	getopt.CommandLine.Parse(args)
 
 	// Build color filter
@@ -127,9 +55,9 @@ func parseArgs(args []string) (col colorizer, sel selector) {
 	}
 
 	// Build device selector
-	or := orSelector{}
+	or := evutil.NewOrSelector()
 	for _, arg := range getopt.CommandLine.Args() {
-		var s selector
+		var s evutil.Selector
 		negate := false
 
 		if strings.HasPrefix(arg, "!") {
@@ -138,18 +66,18 @@ func parseArgs(args []string) (col colorizer, sel selector) {
 		}
 
 		if strings.HasPrefix(arg, "/dev/input/") {
-			s = newPathSelector(arg)
+			s = evutil.NewPathSelector(arg)
 		} else {
-			s = newReSelector(arg)
+			s = evutil.NewReSelector(arg)
 		}
 
 		if negate {
-			s = newNegativeSelector(s)
+			s = evutil.NewNegativeSelector(s)
 		}
-
-		or.selectors = append(or.selectors, s)
+		or.Add(s)
 	}
-	sel = &or
+	or.Add(evutil.NewAllSelector()) // By default, select all devices.
+	sel = or
 
 	return
 }
@@ -189,7 +117,7 @@ func realMain() int {
 	return 0
 }
 
-func listDevices(f selector) []*evdev.InputDevice {
+func listDevices(sel evutil.Selector) []*evdev.InputDevice {
 	ret := make([]*evdev.InputDevice, 0)
 	devices, err := evdev.ListDevicePaths()
 	common.Checkf(err, "Cannot list device paths")
@@ -199,7 +127,7 @@ func listDevices(f selector) []*evdev.InputDevice {
 	for _, idev := range devices {
 		d := must.Must2(evdev.Open(idev.Path))
 
-		if !f.matches(d) {
+		if !evutil.Matches(sel, d) {
 			d.Close()
 			continue
 		}
@@ -539,7 +467,7 @@ func handleOneEvent(d *evdev.InputDevice, col colorizer, path string, id evdev.I
 	return nil
 }
 
-func waitForNewDevices(col colorizer, f selector, starter func(idev *evdev.InputDevice)) {
+func waitForNewDevices(col colorizer, sel evutil.Selector, starter func(idev *evdev.InputDevice)) {
 	w := must.Must2(inotify.NewWatcher())
 	must.Must2(w.AddWatch(devInput, inotify.IN_CREATE|inotify.IN_DELETE))
 
@@ -631,7 +559,7 @@ func waitForNewDevices(col colorizer, f selector, starter func(idev *evdev.Input
 						fmt.Fprintf(os.Stderr, "Failed to open %s: '%s'\n", path, err.Error())
 						continue
 					}
-					if !f.matches(idev) {
+					if !evutil.Matches(sel, idev) {
 						idev.Close()
 						continue
 					}
