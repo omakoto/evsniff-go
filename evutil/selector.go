@@ -24,7 +24,8 @@ func Matches(sel Selector, idev *evdev.InputDevice) bool {
 type Selector interface {
 	Matches(idev *evdev.InputDevice) *bool
 
-	// IsPositive means this selector will increase selection, not reduce.
+	// IsPositive means this selector will increase selection
+	// Otherwise, it will remove already selected elements.
 	IsPositive() bool
 }
 type constantSelector struct {
@@ -74,46 +75,63 @@ func (s *NegativeSelector) Matches(idev *evdev.InputDevice) *bool {
 	return nil // false -> still unknown
 }
 
-type OrSelector struct {
+type CombinedSelector struct {
 	selectors []Selector
+	def       bool
 }
 
-var _ = Selector((*OrSelector)(nil))
+var _ = Selector((*CombinedSelector)(nil))
 
-func NewOrSelector() *OrSelector {
-	return &OrSelector{}
+func NewCombinedSelector() *CombinedSelector {
+	return &CombinedSelector{def: true}
 }
 
-func (s *OrSelector) IsPositive() bool {
-	// Or selector's positivity inherits the last selector's one.
-	if len(s.selectors) == 0 {
-		return false // If there's no selectors in it, it's not "positive".
-	}
-	last := s.selectors[len(s.selectors)-1]
-
-	return last.IsPositive()
+func (s *CombinedSelector) IsPositive() bool {
+	return true
 }
 
-func (s *OrSelector) Add(sel Selector) *OrSelector {
+func (s *CombinedSelector) Add(sel Selector) *CombinedSelector {
 	s.selectors = append(s.selectors, sel)
+
+	// Once we add any positive filter, we should default to false.
+	if sel.IsPositive() {
+		s.def = false
+	}
 	return s
 }
 
-func (s *OrSelector) IsEmpty() bool {
+func (s *CombinedSelector) IsEmpty() bool {
 	return len(s.selectors) == 0
 }
 
-func (s *OrSelector) Matches(idev *evdev.InputDevice) *bool {
-	if len(s.selectors) == 0 {
-		return nil
-	}
+func (s *CombinedSelector) Matches(idev *evdev.InputDevice) *bool {
+	positiveMatched := false
+	negativeMatched := false
 	for _, sel := range s.selectors {
 		b := sel.Matches(idev)
-		if b != nil {
-			return b
+		if b == nil {
+			continue // Ignore unknowns
+		}
+		if sel.IsPositive() {
+			if *b {
+				positiveMatched = true
+			}
+		} else {
+			if !*b {
+				negativeMatched = true
+			}
 		}
 	}
-	return pfalse
+	// If there's any positive match, return true unless there's a negative match.
+	if positiveMatched {
+		return ptr(!negativeMatched)
+	}
+	// If there's any negative match, (and there's no positive match), return false.
+	if negativeMatched {
+		return pfalse
+	}
+
+	return ptr(s.def)
 }
 
 type ReSelector struct {
