@@ -23,6 +23,9 @@ func Matches(sel Selector, idev *evdev.InputDevice) bool {
 
 type Selector interface {
 	Matches(idev *evdev.InputDevice) *bool
+
+	// IsPositive means this selector will increase selection, not reduce.
+	IsPositive() bool
 }
 type constantSelector struct {
 	b bool
@@ -35,7 +38,11 @@ func NewAllSelector() Selector {
 }
 
 func NewNoneSelector() Selector {
-	return &constantSelector{true}
+	return &constantSelector{false}
+}
+
+func (s *constantSelector) IsPositive() bool {
+	return s.b
 }
 
 func (s *constantSelector) Matches(idev *evdev.InputDevice) *bool {
@@ -50,6 +57,10 @@ var _ = Selector((*NegativeSelector)(nil))
 
 func NewNegativeSelector(selector Selector) *NegativeSelector {
 	return &NegativeSelector{selector}
+}
+
+func (s *NegativeSelector) IsPositive() bool {
+	return !s.selector.IsPositive()
 }
 
 func (s *NegativeSelector) Matches(idev *evdev.InputDevice) *bool {
@@ -71,6 +82,16 @@ var _ = Selector((*OrSelector)(nil))
 
 func NewOrSelector() *OrSelector {
 	return &OrSelector{}
+}
+
+func (s *OrSelector) IsPositive() bool {
+	// Or selector's positivity inherits the last selector's one.
+	if len(s.selectors) == 0 {
+		return false // If there's no selectors in it, it's not "positive".
+	}
+	last := s.selectors[len(s.selectors)-1]
+
+	return last.IsPositive()
 }
 
 func (s *OrSelector) Add(sel Selector) *OrSelector {
@@ -105,6 +126,10 @@ func NewReSelector(pattern string) *ReSelector {
 	return &ReSelector{regex: regexp.MustCompile("(?i)" + pattern)}
 }
 
+func (s *ReSelector) IsPositive() bool {
+	return true
+}
+
 func (s *ReSelector) Matches(idev *evdev.InputDevice) *bool {
 	if s.regex.MatchString(must.Must2(idev.Name())) {
 		return ptrue
@@ -120,6 +145,10 @@ var _ = Selector((*PathSelector)(nil))
 
 func NewPathSelector(path string) *PathSelector {
 	return &PathSelector{path}
+}
+
+func (s *PathSelector) IsPositive() bool {
+	return true
 }
 
 func (s *PathSelector) Matches(idev *evdev.InputDevice) *bool {

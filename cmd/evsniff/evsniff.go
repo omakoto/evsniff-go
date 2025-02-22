@@ -56,6 +56,7 @@ func parseArgs(args []string) (col colorizer, sel evutil.Selector) {
 
 	// Build device selector
 	or := evutil.NewOrSelector()
+
 	for _, arg := range getopt.CommandLine.Args() {
 		var s evutil.Selector
 		negate := false
@@ -76,7 +77,13 @@ func parseArgs(args []string) (col colorizer, sel evutil.Selector) {
 		}
 		or.Add(s)
 	}
-	or.Add(evutil.NewAllSelector()) // By default, select all devices.
+	if or.IsEmpty() {
+		or.Add(evutil.NewAllSelector()) // When there's no selector, just select all devices.
+	} else if or.IsPositive() {
+		or.Add(evutil.NewNoneSelector())
+	} else {
+		or.Add(evutil.NewAllSelector())
+	}
 	sel = or
 
 	return
