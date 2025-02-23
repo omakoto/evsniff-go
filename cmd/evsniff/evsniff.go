@@ -30,10 +30,10 @@ var (
 	noColor       = getopt.BoolLong("no-color", 0, "disable colors")
 	verbose       = getopt.BoolLong("verbose", 'v', "make verbose (show detailed device info)")
 	infoOnly      = getopt.BoolLong("info", 'i', "print device info and quit")
-	showSynReport = getopt.BoolLong("show-syn", 'V', "show SYN_REPORTs")
+	showSynReport = getopt.BoolLong("show-syn", 'V', "show SYN_REPORTs (default hidden)")
+	showScan      = getopt.BoolLong("show-scan", 'S', "show MSC_SCAN (default hidden)")
 	noRel         = getopt.BoolLong("no-rel", 'R', "do not show EV_REL")
 	noAbs         = getopt.BoolLong("no-abs", 'A', "do not show EV_ABS")
-	noScan        = getopt.BoolLong("no-scan", 'S', "do not show MSC_SCAN")
 )
 
 func main() {
@@ -431,7 +431,7 @@ func handleOneEvent(d *evdev.InputDevice, col colorizer, path string, id evdev.I
 	if !*showSynReport && e.Type == evdev.EV_SYN && e.Code == evdev.SYN_REPORT {
 		return nil
 	}
-	if *noScan && e.Type == evdev.EV_MSC && e.Code == evdev.MSC_SCAN {
+	if !*showScan && e.Type == evdev.EV_MSC && e.Code == evdev.MSC_SCAN {
 		return nil
 	}
 	if *noRel && e.Type == evdev.EV_REL {
