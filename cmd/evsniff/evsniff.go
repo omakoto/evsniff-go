@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
-	"github.com/omakoto/evsniff-go/evutil"
 	"os"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/omakoto/evsniff-go/evutil"
 
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/holoplot/go-evdev"
@@ -30,6 +31,9 @@ var (
 	verbose       = getopt.BoolLong("verbose", 'v', "make verbose (show detailed device info)")
 	infoOnly      = getopt.BoolLong("info", 'i', "print device info and quit")
 	showSynReport = getopt.BoolLong("show-syn", 'V', "show SYN_REPORTs")
+	noRel         = getopt.BoolLong("no-rel", 'R', "do not show EV_REL")
+	noAbs         = getopt.BoolLong("no-abs", 'A', "do not show EV_ABS")
+	noScan        = getopt.BoolLong("no-scan", 'S', "do not show MSC_SCAN")
 )
 
 func main() {
@@ -425,6 +429,15 @@ func handleOneEvent(d *evdev.InputDevice, col colorizer, path string, id evdev.I
 		return err
 	}
 	if !*showSynReport && e.Type == evdev.EV_SYN && e.Code == evdev.SYN_REPORT {
+		return nil
+	}
+	if *noScan && e.Type == evdev.EV_MSC && e.Code == evdev.MSC_SCAN {
+		return nil
+	}
+	if *noRel && e.Type == evdev.EV_REL {
+		return nil
+	}
+	if *noAbs && e.Type == evdev.EV_ABS {
 		return nil
 	}
 
