@@ -45,7 +45,7 @@ func parseArgs(args []string) (col colorizer, sel evutil.Selector) {
 	getopt.SetUsage(func() {
 		getopt.PrintUsage(os.Stderr)
 		fmt.Fprintf(os.Stderr, "\n"+
-			"  FILTER  Either /dev/input/... or a regex for the device name. Prepend with a ! to negate it.\n"+
+			"  FILTER  Either /dev/input/... or a regex for the device name. Prepend ! to negate it.\n"+
 			"          Example:\n"+
 			"            'logitech' selects all logitec devices\n"+
 			"            '!mouse' selects devices that don't have the word \"mouse\" in it\n"+
