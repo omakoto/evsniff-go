@@ -34,6 +34,7 @@ var (
 	showScan      = getopt.BoolLong("show-scan", 'S', "show MSC_SCAN (default hidden)")
 	noRel         = getopt.BoolLong("no-rel", 'R', "do not show EV_REL")
 	noAbs         = getopt.BoolLong("no-abs", 'A', "do not show EV_ABS")
+	showHz        = getopt.BoolLong("show-hz", 'h', "show event rate in Hz")
 )
 
 func main() {
@@ -403,6 +404,7 @@ var mu = &sync.Mutex{}
 
 var lastPath string
 var lastTime time.Time = time.Time{}
+var lastEvTime float64
 
 func testDevice(d *evdev.InputDevice, col colorizer) {
 	id, err := d.InputID()
@@ -442,6 +444,17 @@ func handleOneEvent(d *evdev.InputDevice, col colorizer, path string, id evdev.I
 	}
 
 	ts := fmt.Sprintf("[%s%d.%06d%s]", col.time(), e.Time.Sec, e.Time.Usec, col.reset())
+
+	hzStr := ""
+	evTime := (float64)(e.Time.Sec*1_000_000+e.Time.Usec) / 1_000_000.0
+	if *showHz && lastEvTime != 0 && evTime != lastEvTime {
+		delta := evTime - lastEvTime
+		if delta < 1 {
+			hz := (int64)(1 / delta)
+			hzStr = fmt.Sprintf(" (%dhz)", hz)
+		}
+	}
+	lastEvTime = evTime
 
 	now := time.Now()
 	mu.Lock()
@@ -485,7 +498,7 @@ func handleOneEvent(d *evdev.InputDevice, col colorizer, path string, id evdev.I
 			c = col.absEvent()
 		}
 
-		fmt.Printf("%s %s%s%s\n", ts, c, e.String(), col.reset())
+		fmt.Printf("%s %s%s%s%s\n", ts, c, e.String(), col.reset(), hzStr)
 	}
 	return nil
 }
