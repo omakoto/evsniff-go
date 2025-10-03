@@ -433,6 +433,19 @@ func testDevice(d *evdev.InputDevice, col colorizer) {
 	}
 }
 
+// path -> keyCode -> value
+var keyStates map[string]map[evdev.EvCode]int32 = make(map[string]map[evdev.EvCode]int32)
+
+func getKeyState(path string, key1, key2 evdev.EvCode) int32 {
+	var keys = keyStates[path]
+	var v1 = keys[key1]
+	var v2 = keys[key2]
+	if v1+v2 > 0 {
+		return 1
+	}
+	return 0
+}
+
 func handleOneEvent(d *evdev.InputDevice, col colorizer, path string, id evdev.InputID, name string) error {
 	e, err := d.ReadOne()
 	if err != nil {
@@ -502,6 +515,12 @@ func handleOneEvent(d *evdev.InputDevice, col colorizer, path string, id evdev.I
 		switch e.Type {
 		case evdev.EV_KEY:
 			c = col.keyEvent()
+
+			// Remember the pressed keys
+			if keyStates[path] == nil {
+				keyStates[path] = make(map[evdev.EvCode]int32)
+			}
+			keyStates[path][e.Code] = e.Value
 		case evdev.EV_REL:
 			c = col.relEvent()
 		case evdev.EV_ABS:
@@ -511,7 +530,11 @@ func handleOneEvent(d *evdev.InputDevice, col colorizer, path string, id evdev.I
 		if !*simple {
 			fmt.Printf("%s %s%s%s%s\n", ts, c, e.String(), col.reset(), hzStr)
 		} else if e.Type == evdev.EV_KEY && e.Value > 0 {
-			fmt.Printf("# type=0x%02X:%s code=0x%02X:%s value=%d vendor=%04X product=%04X path=%s name=\"%s\"\n",
+			fmt.Printf("# s=%d c=%d a=%d m=%d type=0x%02X:%s code=0x%02X:%s value=%d vendor=%04X product=%04X path=%s # %s\n",
+				getKeyState(path, evdev.KEY_LEFTSHIFT, evdev.KEY_RIGHTSHIFT),
+				getKeyState(path, evdev.KEY_LEFTCTRL, evdev.KEY_RIGHTCTRL),
+				getKeyState(path, evdev.KEY_LEFTALT, evdev.KEY_RIGHTALT),
+				getKeyState(path, evdev.KEY_LEFTMETA, evdev.KEY_RIGHTMETA),
 				e.Type, e.TypeName(),
 				e.Code, e.CodeName(),
 				e.Value,
