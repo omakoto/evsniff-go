@@ -35,6 +35,7 @@ var (
 	noRel         = getopt.BoolLong("no-rel", 'R', "do not show EV_REL")
 	noAbs         = getopt.BoolLong("no-abs", 'A', "do not show EV_ABS")
 	showHz        = getopt.BoolLong("show-hz", 'h', "show event rate in Hz")
+	grab          = getopt.BoolLong("grab", 'g', "grab device")
 )
 
 func main() {
@@ -148,6 +149,12 @@ func listDevices(sel evutil.Selector) []*evdev.InputDevice {
 		}
 
 		dumpDevice(d, "    ")
+		if *grab {
+			err = d.Grab()
+			if err != nil {
+				fmt.Printf("Error grabbing device %s: %s\n", d.Path(), err)
+			}
+		}
 
 		ret = append(ret, d)
 	}
