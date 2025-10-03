@@ -36,6 +36,7 @@ var (
 	noAbs         = getopt.BoolLong("no-abs", 'A', "do not show EV_ABS")
 	showHz        = getopt.BoolLong("show-hz", 'h', "show event rate in Hz")
 	grab          = getopt.BoolLong("grab", 'g', "grab device")
+	simple        = getopt.BoolLong("simple", 's', "simple output mode")
 )
 
 func main() {
@@ -466,7 +467,7 @@ func handleOneEvent(d *evdev.InputDevice, col colorizer, path string, id evdev.I
 	now := time.Now()
 	mu.Lock()
 	defer mu.Unlock()
-	if now.Sub(lastTime) > time.Second*3 || lastPath != path {
+	if !*simple && (now.Sub(lastTime) > time.Second*3 || lastPath != path) {
 		// show device name
 		fmt.Printf("%s# From device [%sv%04X p%04X%s]: %s%s%s (%s)%s\n",
 			col.deviceLine(),
@@ -493,7 +494,9 @@ func handleOneEvent(d *evdev.InputDevice, col colorizer, path string, id evdev.I
 		case evdev.SYN_DROPPED:
 			c = col.failure()
 		}
-		fmt.Printf("%s %s-------------- %s ------------%s\n", ts, c, e.CodeName(), col.reset())
+		if !*simple {
+			fmt.Printf("%s %s-------------- %s ------------%s\n", ts, c, e.CodeName(), col.reset())
+		}
 	default:
 		c := col.otherEvent()
 		switch e.Type {
@@ -505,7 +508,18 @@ func handleOneEvent(d *evdev.InputDevice, col colorizer, path string, id evdev.I
 			c = col.absEvent()
 		}
 
-		fmt.Printf("%s %s%s%s%s\n", ts, c, e.String(), col.reset(), hzStr)
+		if !*simple {
+			fmt.Printf("%s %s%s%s%s\n", ts, c, e.String(), col.reset(), hzStr)
+		} else if e.Type == evdev.EV_KEY && e.Value > 0 {
+			fmt.Printf("# type=0x%02X:%s code=0x%02X:%s value=%d vendor=%04X product=%04X path=%s name=\"%s\"\n",
+				e.Type, e.TypeName(),
+				e.Code, e.CodeName(),
+				e.Value,
+				id.Vendor, id.Product,
+				path,
+				name,
+			)
+		}
 	}
 	return nil
 }
