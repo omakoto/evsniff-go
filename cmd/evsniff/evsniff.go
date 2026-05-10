@@ -65,6 +65,8 @@ func parseArgs(args []string) (col colorizer, sel evutil.Selector) {
 			"    evsniff -iv                      list devices with capabilities and quit\n"+
 			"    evsniff -s keyboard              simple mode: one line per key-press (for scripting)\n"+
 			"    evsniff -g keyboard              grab keyboard for exclusive access\n"+
+			"\n"+
+			"https://github.com/omakoto/evsniff-go\n"+
 			"\n")
 	})
 	getopt.CommandLine.Parse(args)
