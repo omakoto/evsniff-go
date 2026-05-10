@@ -26,17 +26,18 @@ const (
 )
 
 var (
-	forceColor    = getopt.BoolLong("color", 'c', "force colors")
-	noColor       = getopt.BoolLong("no-color", 0, "disable colors")
-	verbose       = getopt.BoolLong("verbose", 'v', "make verbose (show detailed device info)")
-	infoOnly      = getopt.BoolLong("info", 'i', "print device info and quit")
-	showSynReport = getopt.BoolLong("show-syn", 'V', "show SYN_REPORTs (default hidden)")
-	showScan      = getopt.BoolLong("show-scan", 'S', "show MSC_SCAN (default hidden)")
-	noRel         = getopt.BoolLong("no-rel", 'R', "do not show EV_REL")
-	noAbs         = getopt.BoolLong("no-abs", 'A', "do not show EV_ABS")
-	showHz        = getopt.BoolLong("show-hz", 'h', "show event rate in Hz")
-	grab          = getopt.BoolLong("grab", 'g', "grab device")
-	simple        = getopt.BoolLong("simple", 's', "simple output mode")
+	help          = getopt.BoolLong("help", 'h', "show this help message")
+	forceColor    = getopt.BoolLong("color", 'c', "force colored output even when stdout is not a terminal")
+	noColor       = getopt.BoolLong("no-color", 0, "disable colored output")
+	verbose       = getopt.BoolLong("verbose", 'v', "show detailed device capabilities and properties")
+	infoOnly      = getopt.BoolLong("info", 'i', "print device info and quit (no event monitoring)")
+	showSynReport = getopt.BoolLong("show-syn", 'V', "show SYN_REPORT events (hidden by default)")
+	showScan      = getopt.BoolLong("show-scan", 'S', "show MSC_SCAN events (hidden by default)")
+	noRel         = getopt.BoolLong("no-rel", 'R', "suppress EV_REL (relative axis) events")
+	noAbs         = getopt.BoolLong("no-abs", 'A', "suppress EV_ABS (absolute axis) events")
+	showHz        = getopt.BoolLong("show-hz", 'H', "show event rate in Hz")
+	grab          = getopt.BoolLong("grab", 'g', "grab device for exclusive access")
+	simple        = getopt.BoolLong("simple", 's', "key-press events only, with modifier key state (for scripting)")
 )
 
 func main() {
@@ -48,13 +49,30 @@ func parseArgs(args []string) (col colorizer, sel evutil.Selector) {
 	getopt.SetUsage(func() {
 		getopt.PrintUsage(os.Stderr)
 		fmt.Fprintf(os.Stderr, "\n"+
-			"  FILTER  Either /dev/input/... or a regex for the device name. Prepend ! to negate it.\n"+
-			"          Example:\n"+
-			"            'logitech' selects all logitec devices\n"+
-			"            '!mouse' selects devices that don't have the word \"mouse\" in it\n"+
+			"Monitor Linux input devices in real time. Watches all matching /dev/input/event*\n"+
+			"devices simultaneously and prints events with color-coded output by event type.\n"+
+			"New devices plugged in after startup are picked up automatically.\n"+
+			"\n"+
+			"  FILTER  A regex matched against the device name (case-insensitive), or a full\n"+
+			"          /dev/input/... path. Prepend ! to exclude matching devices.\n"+
+			"          Without any FILTER, all devices are monitored.\n"+
+			"\n"+
+			"  Examples:\n"+
+			"    evsniff                         monitor all input devices\n"+
+			"    evsniff keyboard                monitor devices with \"keyboard\" in their name\n"+
+			"    evsniff logitech '!mouse'        Logitech devices, excluding mice\n"+
+			"    evsniff /dev/input/event3        monitor a specific device\n"+
+			"    evsniff -iv                      list devices with capabilities and quit\n"+
+			"    evsniff -s keyboard              simple mode: one line per key-press (for scripting)\n"+
+			"    evsniff -g keyboard              grab keyboard for exclusive access\n"+
 			"\n")
 	})
 	getopt.CommandLine.Parse(args)
+
+	if *help {
+		getopt.Usage()
+		os.Exit(0)
+	}
 
 	// Build color filter
 	useColors := false
