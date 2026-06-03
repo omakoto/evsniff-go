@@ -1,8 +1,8 @@
 # evsniff-go
 
-A colorized, multi-device Linux input event monitor — like `evtest`, but watching all devices at once.
+A colorized, multi-device Linux input and MIDI event monitor — like `evtest` and `aseqdump`, but watching all devices at once.
 
-`evsniff` reads from `/dev/input/event*` and prints incoming input events in real time with color-coded output by event type (key, relative, absolute, sync). It detects hot-plugged devices automatically and can filter which devices to watch.
+`evsniff` reads from `/dev/input/event*` (evdev) and `/dev/snd/midi*` (ALSA raw MIDI) devices, printing incoming events in real time with color-coded output by event type (keys, relative/absolute axes, note events, control changes, pitch bends, etc.). It detects hot-plugged devices automatically and can filter which devices to watch.
 
 ## Install
 
@@ -10,7 +10,7 @@ A colorized, multi-device Linux input event monitor — like `evtest`, but watch
 go install -v github.com/omakoto/evsniff-go/cmd/evsniff@latest
 ```
 
-You typically need `sudo` or membership in the `input` group to read from `/dev/input/` devices.
+You typically need `sudo` or membership in the `input` group to read from `/dev/input/` devices, and membership in the `audio` group to read from `/dev/snd/` MIDI devices.
 
 ## Usage
 
@@ -31,8 +31,12 @@ sudo evsniff logitech
 # Exclude devices matching a pattern (prefix with !)
 sudo evsniff logitech '!mouse'
 
-# Monitor a specific device by path
+# Monitor a specific input or MIDI device by path
 sudo evsniff /dev/input/event3
+sudo evsniff /dev/snd/midiC1D0
+
+# Monitor MIDI controllers matching "donner" in their name
+sudo evsniff donner
 
 # List all devices with their capabilities, then quit
 sudo evsniff -iv
@@ -49,13 +53,22 @@ sudo evsniff -RA
 
 ### Simple mode output
 
-`--simple` (`-s`) prints one compact line per key-press event, including modifier key state:
+`--simple` (`-s`) prints one compact line per key-press or MIDI event, ideal for scripts.
+
+For evdev keyboards:
 
 ```
 # s=0 c=0 a=0 m=0 type=0x01:EV_KEY code=0x1E:KEY_A value=1 vendor=046D product=C31C path=/dev/input/event3 # Logitech USB Keyboard
 ```
 
 Fields: `s`=Shift, `c`=Ctrl, `a`=Alt, `m`=Meta/Super (1 = pressed, 0 = not pressed).
+
+For MIDI controllers:
+
+```
+# channel=1 type=NoteOn note=60 velocity=100 path=/dev/snd/midiC1D0 # DONNER DMK25Pro
+# channel=1 type=ControlChange controller=1 value=64 path=/dev/snd/midiC1D0 # DONNER DMK25Pro
+```
 
 ## Options
 
@@ -75,10 +88,10 @@ Fields: `s`=Shift, `c`=Ctrl, `a`=Alt, `m`=Meta/Super (1 = pressed, 0 = not press
 
 ## FILTER syntax
 
-Each positional argument selects which `/dev/input/event*` devices to monitor:
+Each positional argument selects which devices (`/dev/input/event*` or `/dev/snd/midi*`) to monitor:
 
-- **Regex** — matched against the device name (case-insensitive): `logitech`, `keyboard`, `touch`
-- **Path** — selects a specific device: `/dev/input/event3`
-- **Negation** — prefix `!` to exclude: `!mouse`, `!/dev/input/event0`
+- **Regex** — matched against the device name (case-insensitive): `logitech`, `keyboard`, `donner`
+- **Path** — selects a specific device: `/dev/input/event3`, `/dev/snd/midiC1D0`
+- **Negation** — prefix `!` to exclude: `!mouse`, `!/dev/snd/midiC0D0`
 
 Multiple filters are combined: positive filters use OR logic (any match is included), negative filters (`!`) exclude regardless of other matches. With no filters, all devices are monitored.

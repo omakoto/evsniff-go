@@ -1,10 +1,14 @@
 package evutil
 
 import (
-	"github.com/holoplot/go-evdev"
 	"github.com/omakoto/go-common/src/must"
 	"regexp"
 )
+
+type Device interface {
+	Path() string
+	Name() (string, error)
+}
 
 func ptr(value bool) *bool {
 	return &value
@@ -13,8 +17,8 @@ func ptr(value bool) *bool {
 var ptrue = ptr(true)
 var pfalse = ptr(false)
 
-func Matches(sel Selector, idev *evdev.InputDevice) bool {
-	b := sel.Matches(idev)
+func Matches(sel Selector, d Device) bool {
+	b := sel.Matches(d)
 	if b == nil {
 		return true
 	}
@@ -22,7 +26,7 @@ func Matches(sel Selector, idev *evdev.InputDevice) bool {
 }
 
 type Selector interface {
-	Matches(idev *evdev.InputDevice) *bool
+	Matches(d Device) *bool
 
 	// IsPositive means this selector will increase selection
 	// Otherwise, it will remove already selected elements.
@@ -46,7 +50,7 @@ func (s *constantSelector) IsPositive() bool {
 	return s.b
 }
 
-func (s *constantSelector) Matches(idev *evdev.InputDevice) *bool {
+func (s *constantSelector) Matches(d Device) *bool {
 	return &s.b
 }
 
@@ -64,8 +68,8 @@ func (s *NegativeSelector) IsPositive() bool {
 	return !s.selector.IsPositive()
 }
 
-func (s *NegativeSelector) Matches(idev *evdev.InputDevice) *bool {
-	b := s.selector.Matches(idev)
+func (s *NegativeSelector) Matches(d Device) *bool {
+	b := s.selector.Matches(d)
 	if b == nil {
 		return nil // unknown -> unknown
 	}
@@ -104,11 +108,11 @@ func (s *CombinedSelector) IsEmpty() bool {
 	return len(s.selectors) == 0
 }
 
-func (s *CombinedSelector) Matches(idev *evdev.InputDevice) *bool {
+func (s *CombinedSelector) Matches(d Device) *bool {
 	positiveMatched := false
 	negativeMatched := false
 	for _, sel := range s.selectors {
-		b := sel.Matches(idev)
+		b := sel.Matches(d)
 		if b == nil {
 			continue // Ignore unknowns
 		}
@@ -148,8 +152,8 @@ func (s *ReSelector) IsPositive() bool {
 	return true
 }
 
-func (s *ReSelector) Matches(idev *evdev.InputDevice) *bool {
-	if s.regex.MatchString(must.Must2(idev.Name())) {
+func (s *ReSelector) Matches(d Device) *bool {
+	if s.regex.MatchString(must.Must2(d.Name())) {
 		return ptrue
 	}
 	return nil
@@ -169,8 +173,8 @@ func (s *PathSelector) IsPositive() bool {
 	return true
 }
 
-func (s *PathSelector) Matches(idev *evdev.InputDevice) *bool {
-	if idev.Path() == s.path {
+func (s *PathSelector) Matches(d Device) *bool {
+	if d.Path() == s.path {
 		return ptrue
 	}
 	return nil

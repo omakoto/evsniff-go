@@ -49,21 +49,23 @@ func parseArgs(args []string) (col colorizer, sel evutil.Selector) {
 	getopt.SetUsage(func() {
 		getopt.PrintUsage(os.Stderr)
 		fmt.Fprintf(os.Stderr, "\n"+
-			"Monitor Linux input devices in real time. Watches all matching /dev/input/event*\n"+
-			"devices simultaneously and prints events with color-coded output by event type.\n"+
+			"Monitor Linux input and MIDI devices in real time. Watches all matching /dev/input/event*\n"+
+			"and /dev/snd/midi* devices simultaneously and prints events with color-coded output by event type.\n"+
 			"New devices plugged in after startup are picked up automatically.\n"+
 			"\n"+
 			"  FILTER  A regex matched against the device name (case-insensitive), or a full\n"+
-			"          /dev/input/... path. Prepend ! to exclude matching devices.\n"+
+			"          /dev/input/... or /dev/snd/... path. Prepend ! to exclude matching devices.\n"+
 			"          Without any FILTER, all devices are monitored.\n"+
 			"\n"+
 			"  Examples:\n"+
-			"    evsniff                         monitor all input devices\n"+
+			"    evsniff                         monitor all input and MIDI devices\n"+
 			"    evsniff keyboard                monitor devices with \"keyboard\" in their name\n"+
 			"    evsniff logitech '!mouse'        Logitech devices, excluding mice\n"+
-			"    evsniff /dev/input/event3        monitor a specific device\n"+
-			"    evsniff -iv                      list devices with capabilities and quit\n"+
+			"    evsniff /dev/input/event3        monitor a specific input device by path\n"+
+			"    evsniff /dev/snd/midiC1D0        monitor a specific MIDI device by path\n"+
+			"    evsniff -iv                      list devices and quit\n"+
 			"    evsniff -s keyboard              simple mode: one line per key-press (for scripting)\n"+
+			"    evsniff -s donner                simple mode: one line per MIDI event (for scripting)\n"+
 			"    evsniff -g keyboard              grab keyboard for exclusive access\n"+
 			"\n"+
 			"https://github.com/omakoto/evsniff-go\n"+
@@ -103,7 +105,7 @@ func parseArgs(args []string) (col colorizer, sel evutil.Selector) {
 			arg = arg[1:]
 		}
 
-		if strings.HasPrefix(arg, "/dev/input/") {
+		if strings.HasPrefix(arg, "/dev/input/") || strings.HasPrefix(arg, "/dev/snd/") {
 			s = evutil.NewPathSelector(arg)
 		} else {
 			s = evutil.NewReSelector(arg)
@@ -123,10 +125,11 @@ func realMain() int {
 	col, sel := parseArgs(os.Args)
 
 	devs := listDevices(sel)
+	midiDevs := listMidiDevices(sel)
 	if *infoOnly {
 		return 0
 	}
-	if len(devs) == 0 {
+	if len(devs) == 0 && len(midiDevs) == 0 {
 		fmt.Println("No devices selected.")
 		return 1
 	}
@@ -140,6 +143,14 @@ func realMain() int {
 			testDevice(idev, col)
 		}()
 	}
+	for _, d := range midiDevs {
+		wg.Add(1)
+		idev := d
+		go func() {
+			defer wg.Done()
+			testMidiDevice(idev, col)
+		}()
+	}
 
 	// Watch for new devices.
 	waitForNewDevices(col, sel, func(idev *evdev.InputDevice) {
@@ -147,6 +158,12 @@ func realMain() int {
 		go func() {
 			defer wg.Done()
 			testDevice(idev, col)
+		}()
+	}, func(idev *MidiDevice) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			testMidiDevice(idev, col)
 		}()
 	})
 
@@ -264,6 +281,12 @@ type colorizer interface {
 	inotifyPath() string
 	inotifyDelete() string
 	inotifyCreate() string
+
+	midiNoteOn() string
+	midiNoteOff() string
+	midiControlChange() string
+	midiPitchBend() string
+	midiOther() string
 }
 
 type noColorizer struct {
@@ -346,6 +369,26 @@ func (n *noColorizer) inotifyPath() string {
 	return ""
 }
 
+func (n *noColorizer) midiNoteOn() string {
+	return ""
+}
+
+func (n *noColorizer) midiNoteOff() string {
+	return ""
+}
+
+func (n *noColorizer) midiControlChange() string {
+	return ""
+}
+
+func (n *noColorizer) midiPitchBend() string {
+	return ""
+}
+
+func (n *noColorizer) midiOther() string {
+	return ""
+}
+
 type basicColorizer struct {
 }
 
@@ -424,6 +467,26 @@ func (n *basicColorizer) inotifyDelete() string {
 // inotifyPath implements colorizer.
 func (n *basicColorizer) inotifyPath() string {
 	return "\x1b[38;5;15m"
+}
+
+func (n *basicColorizer) midiNoteOn() string {
+	return "\x1b[92;1m"
+}
+
+func (n *basicColorizer) midiNoteOff() string {
+	return "\x1b[90m"
+}
+
+func (n *basicColorizer) midiControlChange() string {
+	return "\x1b[95;1m"
+}
+
+func (n *basicColorizer) midiPitchBend() string {
+	return "\x1b[93;1m"
+}
+
+func (n *basicColorizer) midiOther() string {
+	return "\x1b[36m"
 }
 
 var _ colorizer = (*basicColorizer)(nil)
@@ -567,9 +630,10 @@ func handleOneEvent(d *evdev.InputDevice, col colorizer, path string, id evdev.I
 	return nil
 }
 
-func waitForNewDevices(col colorizer, sel evutil.Selector, starter func(idev *evdev.InputDevice)) {
+func waitForNewDevices(col colorizer, sel evutil.Selector, starter func(idev *evdev.InputDevice), midiStarter func(idev *MidiDevice)) {
 	w := must.Must2(inotify.NewWatcher())
 	must.Must2(w.AddWatch(devInput, inotify.IN_CREATE|inotify.IN_DELETE))
+	_, _ = w.AddWatch("/dev/snd", inotify.IN_CREATE|inotify.IN_DELETE)
 
 	// Start listening for events.
 	go func() {
@@ -610,7 +674,17 @@ func waitForNewDevices(col colorizer, sel evutil.Selector, starter func(idev *ev
 					break // Shouldn't happen
 				}
 
-				path := devInput + "/" + ev.Name
+				var path string
+				isMidi := false
+				if strings.HasPrefix(ev.Name, "event") {
+					path = devInput + "/" + ev.Name
+				} else if strings.HasPrefix(ev.Name, "midiC") {
+					path = "/dev/snd/" + ev.Name
+					isMidi = true
+				} else {
+					continue
+				}
+
 				fmt.Printf("[%sinotify%s] %s%s%s: %s%s%s\n",
 					col.inotify(),
 					col.reset(),
@@ -621,9 +695,8 @@ func waitForNewDevices(col colorizer, sel evutil.Selector, starter func(idev *ev
 					path,
 					col.reset(),
 				)
-				if !strings.HasPrefix(ev.Name, "event") {
-					continue
-				}
+
+				_ = isMidi
 				if create {
 					pending.Add(path)
 
@@ -643,28 +716,62 @@ func waitForNewDevices(col colorizer, sel evutil.Selector, starter func(idev *ev
 					if *verbose {
 						fmt.Printf("%s\n", path)
 					}
-					// ls := exec.Command("ls", "-ls", path)
-					// ls.Stdout = os.Stdout
-					// ls.Stderr = os.Stdout
-					// ls.Start()
 
-					idev, err := evdev.Open(path)
-
-					if err != nil {
-						if os.IsPermission(err) {
-							fmt.Fprintf(os.Stderr, "%s not ready to open yet...\n", path)
-							retries.Add(path)
+					if strings.HasPrefix(path, "/dev/snd/") {
+						card, device, err := parseMidiPath(path)
+						if err != nil {
 							continue
 						}
-						fmt.Fprintf(os.Stderr, "Failed to open %s: '%s'\n", path, err.Error())
-						continue
+						f, err := os.Open(path)
+						if err != nil {
+							if os.IsPermission(err) {
+								fmt.Fprintf(os.Stderr, "%s not ready to open yet...\n", path)
+								retries.Add(path)
+								continue
+							}
+							fmt.Fprintf(os.Stderr, "Failed to open %s: '%s'\n", path, err.Error())
+							continue
+						}
+						cardNames := getCardNames()
+						name := cardNames[card]
+						if name == "" {
+							name = fmt.Sprintf("MIDI Card %d Device %d", card, device)
+						}
+						vendor, product := getMidiUsbIds(card, device)
+						idev := &MidiDevice{
+							path:    path,
+							name:    name,
+							card:    card,
+							device:  device,
+							vendor:  vendor,
+							product: product,
+							file:    f,
+						}
+						if !evutil.Matches(sel, idev) {
+							idev.file.Close()
+							continue
+						}
+						dumpMidiDevice(idev, "    ")
+						midiStarter(idev)
+					} else {
+						idev, err := evdev.Open(path)
+
+						if err != nil {
+							if os.IsPermission(err) {
+								fmt.Fprintf(os.Stderr, "%s not ready to open yet...\n", path)
+								retries.Add(path)
+								continue
+							}
+							fmt.Fprintf(os.Stderr, "Failed to open %s: '%s'\n", path, err.Error())
+							continue
+						}
+						if !evutil.Matches(sel, idev) {
+							idev.Close()
+							continue
+						}
+						dumpDevice(idev, "    ")
+						starter(idev)
 					}
-					if !evutil.Matches(sel, idev) {
-						idev.Close()
-						continue
-					}
-					dumpDevice(idev, "    ")
-					starter(idev)
 				}
 				pending = retries
 				if !pending.IsEmpty() {
