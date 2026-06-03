@@ -327,6 +327,107 @@ func noteName(note byte) string {
 	return fmt.Sprintf("%s%d", name, octave)
 }
 
+func ccName(cc byte) string {
+	switch cc {
+	case 0:
+		return "Bank Select (MSB)"
+	case 1:
+		return "Modulation Wheel"
+	case 2:
+		return "Breath Controller"
+	case 4:
+		return "Foot Controller"
+	case 5:
+		return "Portamento Time"
+	case 6:
+		return "Data Entry (MSB)"
+	case 7:
+		return "Main Volume"
+	case 8:
+		return "Balance"
+	case 10:
+		return "Pan"
+	case 11:
+		return "Expression Controller"
+	case 12:
+		return "Effect Control 1"
+	case 13:
+		return "Effect Control 2"
+	case 64:
+		return "Damper Pedal (Sustain)"
+	case 65:
+		return "Portamento On/Off"
+	case 66:
+		return "Sostenuto Pedal"
+	case 67:
+		return "Soft Pedal"
+	case 68:
+		return "Legato Footswitch"
+	case 69:
+		return "Hold 2"
+	case 70:
+		return "Sound Controller 1 (Sound Variation)"
+	case 71:
+		return "Sound Controller 2 (Timbre/Harmonic Content)"
+	case 72:
+		return "Sound Controller 3 (Release Time)"
+	case 73:
+		return "Sound Controller 4 (Attack Time)"
+	case 74:
+		return "Sound Controller 5 (Brightness)"
+	case 84:
+		return "Portamento Control"
+	case 91:
+		return "Effects 1 Depth (Reverb Send Level)"
+	case 92:
+		return "Effects 2 Depth (Tremolo Depth)"
+	case 93:
+		return "Effects 3 Depth (Chorus Send Level)"
+	case 94:
+		return "Effects 4 Depth (Celeste Depth)"
+	case 95:
+		return "Effects 5 Depth (Phaser Depth)"
+	case 96:
+		return "Data Increment"
+	case 97:
+		return "Data Decrement"
+	case 98:
+		return "NRPN LSB"
+	case 99:
+		return "NRPN MSB"
+	case 100:
+		return "RPN LSB"
+	case 101:
+		return "RPN MSB"
+	case 120:
+		return "All Sound Off"
+	case 121:
+		return "Reset All Controllers"
+	case 122:
+		return "Local Control On/Off"
+	case 123:
+		return "All Notes Off"
+	case 124:
+		return "Omni Mode Off"
+	case 125:
+		return "Omni Mode On"
+	case 126:
+		return "Mono Mode On (Poly Off)"
+	case 127:
+		return "Poly Mode On (Mono Off)"
+	}
+	if cc >= 16 && cc <= 19 {
+		return fmt.Sprintf("General Purpose Controller %d (MSB)", cc-15)
+	}
+	if cc >= 80 && cc <= 83 {
+		return fmt.Sprintf("General Purpose Controller %d", cc-75)
+	}
+	if cc >= 32 && cc <= 63 {
+		return fmt.Sprintf("%s (LSB)", ccName(cc-32))
+	}
+	return "Unknown"
+}
+
 func testMidiDevice(d *MidiDevice, col colorizer) {
 	path := d.Path()
 	name := d.name
@@ -406,8 +507,13 @@ func printMidiEvent(ev MidiEvent, d *MidiDevice, col colorizer) {
 			ts, color, ev.Channel, ev.Data1, noteName(ev.Data1), ev.Data2, col.reset())
 	case "ControlChange":
 		color := col.midiControlChange()
-		fmt.Printf("%s %sMIDI: Control Change (Ch %d) - Controller %d, Value %d%s\n",
-			ts, color, ev.Channel, ev.Data1, ev.Data2, col.reset())
+		name := ccName(ev.Data1)
+		nameStr := ""
+		if name != "Unknown" {
+			nameStr = fmt.Sprintf(" (%s)", name)
+		}
+		fmt.Printf("%s %sMIDI: Control Change (Ch %d) - Controller %d%s, Value %d%s\n",
+			ts, color, ev.Channel, ev.Data1, nameStr, ev.Data2, col.reset())
 	case "PitchBend":
 		color := col.midiPitchBend()
 		val := int(ev.Data1) | (int(ev.Data2) << 7)

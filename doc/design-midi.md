@@ -98,7 +98,7 @@ Var-Len (SysEx)   Fixed-Len  Append byte to buffer      Discard byte
 ### Supported Messages
 
 - **Note On / Note Off**: Decodes the channel, velocity, and note number. The note number is translated into octave representation (e.g., `60` $\rightarrow$ `C4`).
-- **Control Change**: Decodes the controller index and controller value.
+- **Control Change**: Decodes the controller index, resolves its standard name (e.g. Modulation Wheel, Sustain Pedal) if known, and displays the controller value.
 - **Pitch Bend**: Aggregates the 7-bit LSB and MSB data bytes into a single value range.
 - **Program Change & Pressure**: Decodes program index or channel pressure level.
 - **System Exclusive (SysEx)**: Captures variable-length byte streams starting with `0xF0` and ending with `0xF7`.
