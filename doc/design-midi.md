@@ -97,7 +97,7 @@ Var-Len (SysEx)   Fixed-Len  Append byte to buffer      Discard byte
 
 ### Supported Messages
 
-- **Note On / Note Off**: Decodes the channel, velocity, and note number. The note number is translated into octave representation (e.g., `60` $\rightarrow$ `C4`).
+- **Note On / Note Off**: Decodes the channel, velocity, and note number. The note number is translated into octave representation (e.g., `60` $\rightarrow$ `C4`). For Channel 10 (reserved for percussion in General MIDI), standard drum instrument names are also resolved and displayed alongside the note (e.g., `C4 / Hi Bongo`).
 - **Control Change**: Decodes the controller index, resolves its standard name (e.g. Modulation Wheel, Sustain Pedal) if known, and displays the controller value.
 - **Pitch Bend**: Aggregates the 7-bit LSB and MSB data bytes into a single value range.
 - **Program Change & Pressure**: Decodes program index or channel pressure level.
