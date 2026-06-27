@@ -49,6 +49,9 @@ sudo evsniff -g keyboard
 
 # Show only key events, suppressing noisy relative/absolute axis events
 sudo evsniff -RA
+
+# Print all currently pressed/active keys across selected devices, then quit
+sudo evsniff -a keyboard
 ```
 
 ### Simple mode output
@@ -85,6 +88,7 @@ For MIDI controllers:
 | `--show-hz` | `-H` | Show event rate in Hz |
 | `--grab` | `-g` | Grab device for exclusive access |
 | `--simple` | `-s` | Key-press events only, with modifier key state (for scripting) |
+| `--active-keys` | `-a` | Find all active keys from the selected devices, print their names sorted and unique, and quit |
 
 ## FILTER syntax
 

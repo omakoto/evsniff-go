@@ -126,11 +126,12 @@ func parseArgs(args []string) (col colorizer, sel evutil.Selector) {
 func realMain() int {
 	col, sel := parseArgs(os.Args)
 
-	devs := listDevices(sel)
 	if *activeKeys {
-		printActiveKeys(devs)
+		printActiveKeysFast(sel)
 		return 0
 	}
+
+	devs := listDevices(sel)
 	midiDevs := listMidiDevices(sel)
 	if *infoOnly {
 		return 0
@@ -192,13 +193,11 @@ func listDevices(sel evutil.Selector) []*evdev.InputDevice {
 			continue
 		}
 
-		if !*activeKeys {
-			dumpDevice(d, "    ")
-			if *grab {
-				err = d.Grab()
-				if err != nil {
-					fmt.Printf("Error grabbing device %s: %s\n", d.Path(), err)
-				}
+		dumpDevice(d, "    ")
+		if *grab {
+			err = d.Grab()
+			if err != nil {
+				fmt.Printf("Error grabbing device %s: %s\n", d.Path(), err)
 			}
 		}
 
@@ -213,36 +212,7 @@ func sortDevices(devices []evdev.InputPath) {
 	})
 }
 
-func printActiveKeys(devs []*evdev.InputDevice) {
-	activeSet := make(map[string]bool)
-	for _, d := range devs {
-		func() {
-			defer d.Close()
-			state, err := d.State(evdev.EV_KEY)
-			if err != nil {
-				return
-			}
-			for code, val := range state {
-				if val {
-					name := evdev.CodeName(evdev.EV_KEY, code)
-					if name != "" && name != "UNKNOWN" {
-						activeSet[name] = true
-					}
-				}
-			}
-		}()
-	}
 
-	keys := make([]string, 0, len(activeSet))
-	for k := range activeSet {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-
-	for _, k := range keys {
-		fmt.Println(k)
-	}
-}
 
 func dumpDevice(d *evdev.InputDevice, prefix string) {
 	id, err := d.InputID()
