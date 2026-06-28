@@ -213,7 +213,7 @@ func TestIntegration(t *testing.T) {
 				},
 			},
 			expectedExit:   0,
-			expectedStdout: `(?s)^KEY_A\n$`,
+			expectedStdout: `(?s)^KEY_A\n#KEY_A\n$`,
 		},
 		{
 			name: "TC-05 Key-regex match case-insensitive",
@@ -227,7 +227,7 @@ func TestIntegration(t *testing.T) {
 				},
 			},
 			expectedExit:   0,
-			expectedStdout: `(?s)^KEY_A\n$`,
+			expectedStdout: `(?s)^KEY_A\n#KEY_A\n$`,
 		},
 		{
 			name: "TC-06 Key-regex no match",
@@ -261,7 +261,7 @@ func TestIntegration(t *testing.T) {
 				},
 			},
 			expectedExit:   0,
-			expectedStdout: `(?s)^KEY_B\n$`, // Only Mock Keyboard key matched
+			expectedStdout: `(?s)^KEY_B\n#KEY_B\n$`, // Only Mock Keyboard key matched
 		},
 		{
 			name:           "TC-08 Info option",
@@ -288,7 +288,7 @@ func TestIntegration(t *testing.T) {
 				},
 			},
 			expectedExit:   0,
-			expectedStdout: `(?s)^KEY_B\n$`,
+			expectedStdout: `(?s)^KEY_B\n#KEY_B\n$`,
 		},
 		{
 			name: "TC-10 Path selector",
@@ -308,7 +308,7 @@ func TestIntegration(t *testing.T) {
 				},
 			},
 			expectedExit:   0,
-			expectedStdout: `(?s)^KEY_B\n$`,
+			expectedStdout: `(?s)^KEY_B\n#KEY_B\n$`,
 		},
 		{
 			name:           "TC-11 Verbose capabilities and Info option (-iv)",
@@ -322,6 +322,118 @@ func TestIntegration(t *testing.T) {
 			args:           []string{"evsniff", "-s", "-g", "-R", "-A"},
 			expectedExit:   1,
 			expectedStdout: `(?s)FLAGS OK\nNo devices selected\..*`,
+		},
+		{
+			name: "TC-13 Active-keys list with Shift and Alt modifiers",
+			args: []string{"evsniff", "-a"},
+			mockDevices: []mockDeviceSpec{
+				{
+					path:          "/dev/input/event0",
+					name:          "Mock Keyboard",
+					supportedKeys: []int{30, 42, 56}, // KEY_A, KEY_LEFTSHIFT, KEY_LEFTALT
+					activeKeys:    []int{30, 42, 56},
+				},
+			},
+			expectedExit:   0,
+			expectedStdout: `(?s)KEY_A\nKEY_LEFTALT\nKEY_LEFTSHIFT\n#a-s-KEY_A\n`,
+		},
+		{
+			name: "TC-14 Regex match on summary line (positive)",
+			args: []string{"evsniff", "-a", "-r", "a-s-KEY_A"},
+			mockDevices: []mockDeviceSpec{
+				{
+					path:          "/dev/input/event0",
+					name:          "Mock Keyboard",
+					supportedKeys: []int{30, 42, 56}, // KEY_A, KEY_LEFTSHIFT, KEY_LEFTALT
+					activeKeys:    []int{30, 42, 56},
+				},
+			},
+			expectedExit:   0,
+			expectedStdout: `(?s)^#a-s-KEY_A\n$`,
+		},
+		{
+			name: "TC-15 Regex match on summary line (negative)",
+			args: []string{"evsniff", "-a", "-r", "c-KEY_A"},
+			mockDevices: []mockDeviceSpec{
+				{
+					path:          "/dev/input/event0",
+					name:          "Mock Keyboard",
+					supportedKeys: []int{30, 42, 56}, // KEY_A, KEY_LEFTSHIFT, KEY_LEFTALT
+					activeKeys:    []int{30, 42, 56},
+				},
+			},
+			expectedExit:   1,
+			expectedStdout: `(?s)^$`,
+		},
+		{
+			name: "TC-16 Active-keys list with all modifiers (Shift, Ctrl, Alt, Win)",
+			args: []string{"evsniff", "-a"},
+			mockDevices: []mockDeviceSpec{
+				{
+					path:          "/dev/input/event0",
+					name:          "Mock Keyboard",
+					supportedKeys: []int{30, 29, 42, 56, 125}, // KEY_A, KEY_LEFTCTRL, KEY_LEFTSHIFT, KEY_LEFTALT, KEY_LEFTMETA
+					activeKeys:    []int{30, 29, 42, 56, 125},
+				},
+			},
+			expectedExit:   0,
+			expectedStdout: `(?s)KEY_A\nKEY_LEFTALT\nKEY_LEFTCTRL\nKEY_LEFTMETA\nKEY_LEFTSHIFT\n#a-c-s-w-KEY_A\n`,
+		},
+		{
+			name: "TC-17 Active-keys list with Shift and Ctrl modifiers",
+			args: []string{"evsniff", "-a"},
+			mockDevices: []mockDeviceSpec{
+				{
+					path:          "/dev/input/event0",
+					name:          "Mock Keyboard",
+					supportedKeys: []int{30, 29, 42}, // KEY_A, KEY_LEFTCTRL, KEY_LEFTSHIFT
+					activeKeys:    []int{30, 29, 42},
+				},
+			},
+			expectedExit:   0,
+			expectedStdout: `(?s)KEY_A\nKEY_LEFTCTRL\nKEY_LEFTSHIFT\n#c-s-KEY_A\n`,
+		},
+		{
+			name: "TC-18 Active-keys list with Ctrl and Alt modifiers",
+			args: []string{"evsniff", "-a"},
+			mockDevices: []mockDeviceSpec{
+				{
+					path:          "/dev/input/event0",
+					name:          "Mock Keyboard",
+					supportedKeys: []int{30, 29, 56}, // KEY_A, KEY_LEFTCTRL, KEY_LEFTALT
+					activeKeys:    []int{30, 29, 56},
+				},
+			},
+			expectedExit:   0,
+			expectedStdout: `(?s)KEY_A\nKEY_LEFTALT\nKEY_LEFTCTRL\n#a-c-KEY_A\n`,
+		},
+		{
+			name: "TC-19 Active-keys list with Alt and Win modifiers",
+			args: []string{"evsniff", "-a"},
+			mockDevices: []mockDeviceSpec{
+				{
+					path:          "/dev/input/event0",
+					name:          "Mock Keyboard",
+					supportedKeys: []int{30, 56, 125}, // KEY_A, KEY_LEFTALT, KEY_LEFTMETA
+					activeKeys:    []int{30, 56, 125},
+				},
+			},
+			expectedExit:   0,
+			expectedStdout: `(?s)KEY_A\nKEY_LEFTALT\nKEY_LEFTMETA\n#a-w-KEY_A\n`,
+		},
+		{
+			name: "TC-20 Active-keys list with Right modifiers (Shift, Ctrl, Alt, Win)",
+			args: []string{"evsniff", "-a"},
+			mockDevices: []mockDeviceSpec{
+				{
+					path:          "/dev/input/event0",
+					name:          "Mock Keyboard",
+					supportedKeys: []int{30, 54, 97, 100, 126}, // KEY_A, KEY_RIGHTSHIFT, KEY_RIGHTCTRL, KEY_RIGHTALT, KEY_RIGHTMETA
+					activeKeys:    []int{30, 54, 97, 100, 126},
+				},
+			},
+			expectedExit:   0,
+			expectedStdout: `(?s)KEY_A\nKEY_RIGHTALT\nKEY_RIGHTCTRL\nKEY_RIGHTMETA\nKEY_RIGHTSHIFT\n#a-c-s-w-KEY_A\n`,
 		},
 	}
 

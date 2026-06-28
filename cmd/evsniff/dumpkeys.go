@@ -95,6 +95,17 @@ func bitIsSet(bits []byte, bit int) bool {
 	return (bits[bit/8] & (1 << (bit % 8))) != 0
 }
 
+func isModifierKey(name string) bool {
+	switch name {
+	case "KEY_LEFTSHIFT", "KEY_RIGHTSHIFT",
+		"KEY_LEFTCTRL", "KEY_RIGHTCTRL",
+		"KEY_LEFTALT", "KEY_RIGHTALT",
+		"KEY_LEFTMETA", "KEY_RIGHTMETA":
+		return true
+	}
+	return false
+}
+
 func printActiveKeysFast(sel evutil.Selector, re *regexp.Regexp) bool {
 	files, err := readDirFn(devInputPath)
 	if err != nil {
@@ -103,7 +114,7 @@ func printActiveKeysFast(sel evutil.Selector, re *regexp.Regexp) bool {
 	}
 
 	var mu sync.Mutex
-	activeSet := make(map[string]bool)
+	globalActiveSet := make(map[string]bool)
 	var wg sync.WaitGroup
 
 	for _, entry := range files {
@@ -145,9 +156,7 @@ func printActiveKeysFast(sel evutil.Selector, re *regexp.Regexp) bool {
 				if bitIsSet(supported, code) && bitIsSet(active, code) {
 					keyName := evdev.CodeName(evdev.EV_KEY, evdev.EvCode(code))
 					if keyName != "" && keyName != "UNKNOWN" {
-						if re == nil || re.MatchString(keyName) {
-							deviceKeys = append(deviceKeys, keyName)
-						}
+						deviceKeys = append(deviceKeys, keyName)
 					}
 				}
 			}
@@ -155,7 +164,7 @@ func printActiveKeysFast(sel evutil.Selector, re *regexp.Regexp) bool {
 			if len(deviceKeys) > 0 {
 				mu.Lock()
 				for _, keyName := range deviceKeys {
-					activeSet[keyName] = true
+					globalActiveSet[keyName] = true
 				}
 				mu.Unlock()
 			}
@@ -163,18 +172,62 @@ func printActiveKeysFast(sel evutil.Selector, re *regexp.Regexp) bool {
 	}
 	wg.Wait()
 
-	keys := make([]string, 0, len(activeSet))
-	for k := range activeSet {
-		keys = append(keys, k)
+	var shiftActive, ctrlActive, altActive, winActive bool
+	for k := range globalActiveSet {
+		switch k {
+		case "KEY_LEFTSHIFT", "KEY_RIGHTSHIFT":
+			shiftActive = true
+		case "KEY_LEFTCTRL", "KEY_RIGHTCTRL":
+			ctrlActive = true
+		case "KEY_LEFTALT", "KEY_RIGHTALT":
+			altActive = true
+		case "KEY_LEFTMETA", "KEY_RIGHTMETA":
+			winActive = true
+		}
 	}
-	slices.Sort(keys)
 
-	for _, k := range keys {
+	var prefix strings.Builder
+	if altActive {
+		prefix.WriteString("a-")
+	}
+	if ctrlActive {
+		prefix.WriteString("c-")
+	}
+	if shiftActive {
+		prefix.WriteString("s-")
+	}
+	if winActive {
+		prefix.WriteString("w-")
+	}
+	pref := prefix.String()
+
+	matchedKeys := make([]string, 0)
+	matchedSummaries := make([]string, 0)
+
+	for k := range globalActiveSet {
+		if re == nil || re.MatchString(k) {
+			matchedKeys = append(matchedKeys, k)
+		}
+		if !isModifierKey(k) {
+			summaryLine := "#" + pref + k
+			if re == nil || re.MatchString(summaryLine) {
+				matchedSummaries = append(matchedSummaries, summaryLine)
+			}
+		}
+	}
+
+	slices.Sort(matchedKeys)
+	slices.Sort(matchedSummaries)
+
+	for _, k := range matchedKeys {
 		fmt.Println(k)
+	}
+	for _, s := range matchedSummaries {
+		fmt.Println(s)
 	}
 
 	if re != nil {
-		return len(keys) > 0
+		return len(matchedKeys) > 0 || len(matchedSummaries) > 0
 	}
 	return true
 }

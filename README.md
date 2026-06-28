@@ -52,6 +52,9 @@ sudo evsniff -RA
 
 # Print all currently pressed/active keys across selected devices, then quit
 sudo evsniff -a keyboard
+
+# Check if any active key matches a regex (case-insensitive), exit 0 if there's a match, otherwise exit 1
+sudo evsniff -a -r 'KEY_A'
 ```
 
 ### Simple mode output
