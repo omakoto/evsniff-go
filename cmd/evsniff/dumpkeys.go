@@ -1,7 +1,7 @@
 package main
 
 // We use raw syscalls instead of Go's os.File and go-evdev wrappers
-// for the -a/--active-keys query path for performance reasons. 
+// for the -a/--active-keys query path for performance reasons.
 // Standard os.File.Fd() calls register file descriptors with the Go
 // runtime netpoller, introducing thread synchronization and scheduler
 // delay (around 180ms). Raw syscalls bypass this completely, bringing
@@ -19,6 +19,21 @@ import (
 
 	"github.com/holoplot/go-evdev"
 	"github.com/omakoto/evsniff-go/evutil"
+)
+
+var (
+	devInputPath    = "/dev/input"
+	readDirFn       = os.ReadDir
+	openRawDeviceFn = func(path string) (uintptr, error) {
+		fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_CLOEXEC, 0)
+		return uintptr(fd), err
+	}
+	closeRawDeviceFn = func(fd uintptr) {
+		_ = syscall.Close(int(fd))
+	}
+	getRawDeviceNameFn = getRawDeviceName
+	getSupportedKeysFn = getSupportedKeys
+	getActiveKeysRawFn = getActiveKeysRaw
 )
 
 type rawDevice struct {
@@ -81,10 +96,9 @@ func bitIsSet(bits []byte, bit int) bool {
 }
 
 func printActiveKeysFast(sel evutil.Selector, re *regexp.Regexp) bool {
-	basePath := "/dev/input"
-	files, err := os.ReadDir(basePath)
+	files, err := readDirFn(devInputPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Cannot read %s: %v\n", basePath, err)
+		fmt.Fprintf(os.Stderr, "Cannot read %s: %v\n", devInputPath, err)
 		return false
 	}
 
@@ -97,18 +111,18 @@ func printActiveKeysFast(sel evutil.Selector, re *regexp.Regexp) bool {
 			continue
 		}
 
-		path := basePath + "/" + entry.Name()
+		path := devInputPath + "/" + entry.Name()
 		wg.Add(1)
 		go func(path string) {
 			defer wg.Done()
 
-			fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_CLOEXEC, 0)
+			fd, err := openRawDeviceFn(path)
 			if err != nil {
 				return
 			}
-			defer syscall.Close(fd)
+			defer closeRawDeviceFn(fd)
 
-			name, err := getRawDeviceName(uintptr(fd))
+			name, err := getRawDeviceNameFn(fd)
 			if err != nil {
 				return
 			}
@@ -117,11 +131,11 @@ func printActiveKeysFast(sel evutil.Selector, re *regexp.Regexp) bool {
 				return
 			}
 
-			supported, err := getSupportedKeys(uintptr(fd))
+			supported, err := getSupportedKeysFn(fd)
 			if err != nil {
 				return
 			}
-			active, err := getActiveKeysRaw(uintptr(fd))
+			active, err := getActiveKeysRawFn(fd)
 			if err != nil {
 				return
 			}

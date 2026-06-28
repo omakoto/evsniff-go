@@ -43,11 +43,36 @@ var (
 	keyRegex      = getopt.StringLong("key-regex", 'r', "", "regular expression to match active keys when -a is passed")
 )
 
+var (
+	osExit              = os.Exit
+	listDevicesFn       = listDevices
+	listMidiDevicesFn   = listMidiDevices
+	waitForNewDevicesFn = waitForNewDevices
+)
+
+func resetFlags() {
+	*help = false
+	*forceColor = false
+	*noColor = false
+	*verbose = false
+	*infoOnly = false
+	*showSynReport = false
+	*showScan = false
+	*noRel = false
+	*noAbs = false
+	*showHz = false
+	*grab = false
+	*simple = false
+	*activeKeys = false
+	*keyRegex = ""
+}
+
 func main() {
 	common.RunAndExit(realMain)
 }
 
 func parseArgs(args []string) (col colorizer, sel evutil.Selector) {
+	resetFlags()
 	getopt.SetParameters("[FILTER...]")
 	getopt.SetUsage(func() {
 		getopt.PrintUsage(os.Stderr)
@@ -80,7 +105,7 @@ func parseArgs(args []string) (col colorizer, sel evutil.Selector) {
 
 	if *help {
 		getopt.Usage()
-		os.Exit(0)
+		osExit(0)
 	}
 
 	// Build color filter
@@ -150,8 +175,8 @@ func realMain() int {
 		return 1
 	}
 
-	devs := listDevices(sel)
-	midiDevs := listMidiDevices(sel)
+	devs := listDevicesFn(sel)
+	midiDevs := listMidiDevicesFn(sel)
 	if *infoOnly {
 		return 0
 	}
@@ -179,7 +204,7 @@ func realMain() int {
 	}
 
 	// Watch for new devices.
-	waitForNewDevices(col, sel, func(idev *evdev.InputDevice) {
+	waitForNewDevicesFn(col, sel, func(idev *evdev.InputDevice) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -230,8 +255,6 @@ func sortDevices(devices []evdev.InputPath) {
 		return utils.LessToCmp(natural.Less)(a.Path, b.Path)
 	})
 }
-
-
 
 func dumpDevice(d *evdev.InputDevice, prefix string) {
 	id, err := d.InputID()
