@@ -505,6 +505,48 @@ func TestIntegration(t *testing.T) {
 			expectedExit:   0,
 			expectedStdout: `(?s)^#s-w-BTN_0\n$`,
 		},
+		{
+			name: "TC-26 Active-keys list with only Shift and Alt modifiers (NOKEY)",
+			args: []string{"evsniff", "-a"},
+			mockDevices: []mockDeviceSpec{
+				{
+					path:          "/dev/input/event0",
+					name:          "Mock Keyboard",
+					supportedKeys: []int{42, 56}, // KEY_LEFTSHIFT, KEY_LEFTALT
+					activeKeys:    []int{42, 56},
+				},
+			},
+			expectedExit:   0,
+			expectedStdout: `(?s)KEY_LEFTALT\nKEY_LEFTSHIFT\n#a-s-NOKEY\n`,
+		},
+		{
+			name: "TC-27 Regex match on NOKEY summary line (positive)",
+			args: []string{"evsniff", "-a", "-r", "a-s-NOKEY"},
+			mockDevices: []mockDeviceSpec{
+				{
+					path:          "/dev/input/event0",
+					name:          "Mock Keyboard",
+					supportedKeys: []int{42, 56}, // KEY_LEFTSHIFT, KEY_LEFTALT
+					activeKeys:    []int{42, 56},
+				},
+			},
+			expectedExit:   0,
+			expectedStdout: `(?s)^#a-s-NOKEY\n$`,
+		},
+		{
+			name: "TC-28 Regex match on NOKEY summary line (negative)",
+			args: []string{"evsniff", "-a", "-r", "c-NOKEY"},
+			mockDevices: []mockDeviceSpec{
+				{
+					path:          "/dev/input/event0",
+					name:          "Mock Keyboard",
+					supportedKeys: []int{42, 56}, // KEY_LEFTSHIFT, KEY_LEFTALT
+					activeKeys:    []int{42, 56},
+				},
+			},
+			expectedExit:   1,
+			expectedStdout: `(?s)^$`,
+		},
 	}
 
 	for _, tc := range tests {

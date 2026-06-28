@@ -206,7 +206,11 @@ func printActiveKeysFast(sel evutil.Selector, re *regexp.Regexp) bool {
 	matchedKeys := make([]string, 0)
 	matchedSummaries := make([]string, 0)
 
+	hasNonModifier := false
 	for k := range globalActiveSet {
+		if !isModifierKey(k) {
+			hasNonModifier = true
+		}
 		if re == nil || re.MatchString(k) {
 			matchedKeys = append(matchedKeys, k)
 		}
@@ -215,6 +219,13 @@ func printActiveKeysFast(sel evutil.Selector, re *regexp.Regexp) bool {
 			if re == nil || re.MatchString(summaryLine) {
 				matchedSummaries = append(matchedSummaries, summaryLine)
 			}
+		}
+	}
+
+	if !hasNonModifier && pref != "" {
+		summaryLine := "#" + pref + "NOKEY"
+		if re == nil || re.MatchString(summaryLine) {
+			matchedSummaries = append(matchedSummaries, summaryLine)
 		}
 	}
 
