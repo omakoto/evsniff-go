@@ -10,6 +10,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -79,12 +80,12 @@ func bitIsSet(bits []byte, bit int) bool {
 	return (bits[bit/8] & (1 << (bit % 8))) != 0
 }
 
-func printActiveKeysFast(sel evutil.Selector) {
+func printActiveKeysFast(sel evutil.Selector, re *regexp.Regexp) bool {
 	basePath := "/dev/input"
 	files, err := os.ReadDir(basePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Cannot read %s: %v\n", basePath, err)
-		return
+		return false
 	}
 
 	var mu sync.Mutex
@@ -130,7 +131,9 @@ func printActiveKeysFast(sel evutil.Selector) {
 				if bitIsSet(supported, code) && bitIsSet(active, code) {
 					keyName := evdev.CodeName(evdev.EV_KEY, evdev.EvCode(code))
 					if keyName != "" && keyName != "UNKNOWN" {
-						deviceKeys = append(deviceKeys, keyName)
+						if re == nil || re.MatchString(keyName) {
+							deviceKeys = append(deviceKeys, keyName)
+						}
 					}
 				}
 			}
@@ -155,4 +158,9 @@ func printActiveKeysFast(sel evutil.Selector) {
 	for _, k := range keys {
 		fmt.Println(k)
 	}
+
+	if re != nil {
+		return len(keys) > 0
+	}
+	return true
 }
