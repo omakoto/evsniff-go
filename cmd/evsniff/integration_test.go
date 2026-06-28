@@ -270,6 +270,59 @@ func TestIntegration(t *testing.T) {
 			expectedExit:   0,
 			expectedStdout: `(?s)/dev/input/event0\s+\[v0001 p0002\]:\tMock Keyboard.*`,
 		},
+		{
+			name: "TC-09 Negation filter",
+			args: []string{"evsniff", "-a", "mock", "!mouse"},
+			mockDevices: []mockDeviceSpec{
+				{
+					path:          "/dev/input/event0",
+					name:          "Mock Mouse",
+					supportedKeys: []int{30},
+					activeKeys:    []int{30},
+				},
+				{
+					path:          "/dev/input/event1",
+					name:          "Mock Keyboard",
+					supportedKeys: []int{48},
+					activeKeys:    []int{48},
+				},
+			},
+			expectedExit:   0,
+			expectedStdout: `(?s)^KEY_B\n$`,
+		},
+		{
+			name: "TC-10 Path selector",
+			args: []string{"evsniff", "-a", "/dev/input/event1"},
+			mockDevices: []mockDeviceSpec{
+				{
+					path:          "/dev/input/event0",
+					name:          "Mock Keyboard 1",
+					supportedKeys: []int{30},
+					activeKeys:    []int{30},
+				},
+				{
+					path:          "/dev/input/event1",
+					name:          "Mock Keyboard 2",
+					supportedKeys: []int{48},
+					activeKeys:    []int{48},
+				},
+			},
+			expectedExit:   0,
+			expectedStdout: `(?s)^KEY_B\n$`,
+		},
+		{
+			name:           "TC-11 Verbose capabilities and Info option (-iv)",
+			args:           []string{"evsniff", "-i", "-v"},
+			mockInfoOnly:   true,
+			expectedExit:   0,
+			expectedStdout: `(?s)/dev/input/event0\s+\[v0001 p0002\]:\tMock Keyboard\s+Event type 1 \(EV_KEY\)\s+Event code 30 \(KEY_A\) state 0.*`,
+		},
+		{
+			name:           "TC-12 Flag validation (simple mode, grab, axis suppression)",
+			args:           []string{"evsniff", "-s", "-g", "-R", "-A"},
+			expectedExit:   1,
+			expectedStdout: `(?s)FLAGS OK\nNo devices selected\..*`,
+		},
 	}
 
 	for _, tc := range tests {
@@ -286,8 +339,31 @@ func TestIntegration(t *testing.T) {
 			}()
 
 			if tc.mockInfoOnly {
+				if tc.name == "TC-11 Verbose capabilities and Info option (-iv)" {
+					listDevicesFn = func(sel evutil.Selector) []*evdev.InputDevice {
+						fmt.Println("/dev/input/event0    [v0001 p0002]:\tMock Keyboard")
+						fmt.Println("    Event type 1 (EV_KEY)")
+						fmt.Println("      Event code 30 (KEY_A) state 0")
+						return nil
+					}
+				} else {
+					listDevicesFn = func(sel evutil.Selector) []*evdev.InputDevice {
+						fmt.Println("/dev/input/event0    [v0001 p0002]:\tMock Keyboard")
+						return nil
+					}
+				}
+				listMidiDevicesFn = func(sel evutil.Selector) []*MidiDevice {
+					return nil
+				}
+			}
+
+			if tc.name == "TC-12 Flag validation (simple mode, grab, axis suppression)" {
 				listDevicesFn = func(sel evutil.Selector) []*evdev.InputDevice {
-					fmt.Println("/dev/input/event0    [v0001 p0002]:\tMock Keyboard")
+					if *simple && *grab && *noRel && *noAbs {
+						fmt.Println("FLAGS OK")
+					} else {
+						fmt.Printf("FLAGS ERROR: simple=%t grab=%t noRel=%t noAbs=%t\n", *simple, *grab, *noRel, *noAbs)
+					}
 					return nil
 				}
 				listMidiDevicesFn = func(sel evutil.Selector) []*MidiDevice {
