@@ -89,7 +89,7 @@ For MIDI controllers:
 | `--grab` | `-g` | Grab device for exclusive access |
 | `--simple` | `-s` | Key-press events only, with modifier key state (for scripting) |
 | `--active-keys` | `-a` | Find all active keys from the selected devices, print their names sorted and unique, and quit |
-| `--key-regex` | | Regular expression to filter active key names when `-a` is specified. If provided, exits with `0` if any key matches, and `1` otherwise |
+| `--key-regex` | `-r` | Regular expression to filter active key names when `-a` is specified (case-insensitive). If provided, exits with `0` if any key matches, and `1` otherwise |
 
 ## FILTER syntax
 

@@ -40,7 +40,7 @@ var (
 	grab          = getopt.BoolLong("grab", 'g', "grab device for exclusive access")
 	simple        = getopt.BoolLong("simple", 's', "key-press events only, with modifier key state (for scripting)")
 	activeKeys    = getopt.BoolLong("active-keys", 'a', "find all active keys from the selected devices, print their names, and exit")
-	keyRegex      = getopt.StringLong("key-regex", 0, "", "regular expression to match active keys when -a is passed")
+	keyRegex      = getopt.StringLong("key-regex", 'r', "", "regular expression to match active keys when -a is passed")
 )
 
 func main() {
@@ -71,7 +71,7 @@ func parseArgs(args []string) (col colorizer, sel evutil.Selector) {
 			"    evsniff -s donner                simple mode: one line per MIDI event (for scripting)\n"+
 			"    evsniff -g keyboard              grab keyboard for exclusive access\n"+
 			"    evsniff -a keyboard              print active keys on keyboard devices and quit\n"+
-			"    evsniff -a --key-regex KEY_A     check if KEY_A is pressed and exit 0 if so\n"+
+			"    evsniff -a -r KEY_A              check if KEY_A is pressed and exit 0 if so\n"+
 			"\n"+
 			"https://github.com/omakoto/evsniff-go\n"+
 			"\n")
@@ -138,7 +138,7 @@ func realMain() int {
 		var re *regexp.Regexp
 		if *keyRegex != "" {
 			var err error
-			re, err = regexp.Compile(*keyRegex)
+			re, err = regexp.Compile("(?i)" + *keyRegex)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: invalid regular expression %q: %v\n", *keyRegex, err)
 				return 2
