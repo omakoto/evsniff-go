@@ -12,6 +12,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"unsafe"
 
@@ -86,7 +87,9 @@ func printActiveKeysFast(sel evutil.Selector) {
 		return
 	}
 
+	var mu sync.Mutex
 	activeSet := make(map[string]bool)
+	var wg sync.WaitGroup
 
 	for _, entry := range files {
 		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "event") {
@@ -94,38 +97,54 @@ func printActiveKeysFast(sel evutil.Selector) {
 		}
 
 		path := basePath + "/" + entry.Name()
-		fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_CLOEXEC, 0)
-		if err != nil {
-			continue
-		}
+		wg.Add(1)
+		go func(path string) {
+			defer wg.Done()
 
-		name, err := getRawDeviceName(uintptr(fd))
-		if err != nil {
-			syscall.Close(fd)
-			continue
-		}
+			fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_CLOEXEC, 0)
+			if err != nil {
+				return
+			}
+			defer syscall.Close(fd)
 
-		if !evutil.Matches(sel, &rawDevice{path: path, name: name}) {
-			syscall.Close(fd)
-			continue
-		}
+			name, err := getRawDeviceName(uintptr(fd))
+			if err != nil {
+				return
+			}
 
-		supported, err := getSupportedKeys(uintptr(fd))
-		if err == nil {
+			if !evutil.Matches(sel, &rawDevice{path: path, name: name}) {
+				return
+			}
+
+			supported, err := getSupportedKeys(uintptr(fd))
+			if err != nil {
+				return
+			}
 			active, err := getActiveKeysRaw(uintptr(fd))
-			if err == nil {
-				for code := 0; code < 767; code++ {
-					if bitIsSet(supported, code) && bitIsSet(active, code) {
-						keyName := evdev.CodeName(evdev.EV_KEY, evdev.EvCode(code))
-						if keyName != "" && keyName != "UNKNOWN" {
-							activeSet[keyName] = true
-						}
+			if err != nil {
+				return
+			}
+
+			deviceKeys := make([]string, 0)
+			for code := 0; code < 767; code++ {
+				if bitIsSet(supported, code) && bitIsSet(active, code) {
+					keyName := evdev.CodeName(evdev.EV_KEY, evdev.EvCode(code))
+					if keyName != "" && keyName != "UNKNOWN" {
+						deviceKeys = append(deviceKeys, keyName)
 					}
 				}
 			}
-		}
-		syscall.Close(fd)
+
+			if len(deviceKeys) > 0 {
+				mu.Lock()
+				for _, keyName := range deviceKeys {
+					activeSet[keyName] = true
+				}
+				mu.Unlock()
+			}
+		}(path)
 	}
+	wg.Wait()
 
 	keys := make([]string, 0, len(activeSet))
 	for k := range activeSet {
