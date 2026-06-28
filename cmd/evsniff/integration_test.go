@@ -435,6 +435,76 @@ func TestIntegration(t *testing.T) {
 			expectedExit:   0,
 			expectedStdout: `(?s)KEY_A\nKEY_RIGHTALT\nKEY_RIGHTCTRL\nKEY_RIGHTMETA\nKEY_RIGHTSHIFT\n#a-c-s-w-KEY_A\n`,
 		},
+		{
+			name: "TC-21 Active-keys slash name splitting (e.g. BTN_MOUSE/BTN_LEFT)",
+			args: []string{"evsniff", "-a"},
+			mockDevices: []mockDeviceSpec{
+				{
+					path:          "/dev/input/event0",
+					name:          "Mock Mouse",
+					supportedKeys: []int{272}, // BTN_MOUSE/BTN_LEFT
+					activeKeys:    []int{272},
+				},
+			},
+			expectedExit:   0,
+			expectedStdout: `(?s)BTN_LEFT\nBTN_MOUSE\n#BTN_LEFT\n#BTN_MOUSE\n`,
+		},
+		{
+			name: "TC-22 Regex match on first split name (positive)",
+			args: []string{"evsniff", "-a", "-r", "BTN_LEFT"},
+			mockDevices: []mockDeviceSpec{
+				{
+					path:          "/dev/input/event0",
+					name:          "Mock Mouse",
+					supportedKeys: []int{272},
+					activeKeys:    []int{272},
+				},
+			},
+			expectedExit:   0,
+			expectedStdout: `(?s)^BTN_LEFT\n#BTN_LEFT\n$`,
+		},
+		{
+			name: "TC-23 Regex match on second split name (positive)",
+			args: []string{"evsniff", "-a", "-r", "BTN_MOUSE"},
+			mockDevices: []mockDeviceSpec{
+				{
+					path:          "/dev/input/event0",
+					name:          "Mock Mouse",
+					supportedKeys: []int{272},
+					activeKeys:    []int{272},
+				},
+			},
+			expectedExit:   0,
+			expectedStdout: `(?s)^BTN_MOUSE\n#BTN_MOUSE\n$`,
+		},
+		{
+			name: "TC-24 Active-keys list with BTN_MISC/BTN_0 and Shift + Win modifiers",
+			args: []string{"evsniff", "-a"},
+			mockDevices: []mockDeviceSpec{
+				{
+					path:          "/dev/input/event0",
+					name:          "Mock Keyboard",
+					supportedKeys: []int{256, 42, 125}, // BTN_MISC/BTN_0, KEY_LEFTSHIFT, KEY_LEFTMETA
+					activeKeys:    []int{256, 42, 125},
+				},
+			},
+			expectedExit:   0,
+			expectedStdout: `(?s)BTN_0\nBTN_MISC\nKEY_LEFTMETA\nKEY_LEFTSHIFT\n#s-w-BTN_0\n#s-w-BTN_MISC\n`,
+		},
+		{
+			name: "TC-25 Regex match on split name summary with Shift + Win modifiers",
+			args: []string{"evsniff", "-a", "-r", "s-w-BTN_0"},
+			mockDevices: []mockDeviceSpec{
+				{
+					path:          "/dev/input/event0",
+					name:          "Mock Keyboard",
+					supportedKeys: []int{256, 42, 125}, // BTN_MISC/BTN_0, KEY_LEFTSHIFT, KEY_LEFTMETA
+					activeKeys:    []int{256, 42, 125},
+				},
+			},
+			expectedExit:   0,
+			expectedStdout: `(?s)^#s-w-BTN_0\n$`,
+		},
 	}
 
 	for _, tc := range tests {

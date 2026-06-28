@@ -156,7 +156,9 @@ func printActiveKeysFast(sel evutil.Selector, re *regexp.Regexp) bool {
 				if bitIsSet(supported, code) && bitIsSet(active, code) {
 					keyName := evdev.CodeName(evdev.EV_KEY, evdev.EvCode(code))
 					if keyName != "" && keyName != "UNKNOWN" {
-						deviceKeys = append(deviceKeys, keyName)
+						for _, part := range strings.Split(keyName, "/") {
+							deviceKeys = append(deviceKeys, part)
+						}
 					}
 				}
 			}
